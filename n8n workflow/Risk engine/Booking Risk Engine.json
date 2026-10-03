@@ -12,7 +12,7 @@
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 1,
       "position": [
-        -544,
+        -560,
         -64
       ],
       "webhookId": "08a80b83-46f7-4ede-b65d-14b77ddb2d4e"
@@ -26,7 +26,7 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        -320,
+        -336,
         -64
       ]
     },
@@ -53,7 +53,7 @@
       "type": "n8n-nodes-base.airtable",
       "typeVersion": 2,
       "position": [
-        -96,
+        -112,
         -64
       ],
       "credentials": {
@@ -62,19 +62,6 @@
           "name": "Airtable Personal Access Token account"
         }
       }
-    },
-    {
-      "parameters": {
-        "jsCode": "// 1. Retrieve booking request payload and property context\nconst item = $('2. Payload Schema Validation').first().json;\n\nconst guestName = item.guest_name || 'Guest';\nconst guestEmail = item.guest_email || '';\nconst guestCount = Number(item.guest_count || 0);\nconst propertyCapacity = Number($input.first().json.Capacity || 0);\nconst rentalPurpose = (item.rental_purpose || '').toLowerCase();\n\n// 2. Define risk rules and configuration\nconst restrictedKeywords = [\"party\", \"birthday\", \"wedding\", \"rave\", \"smoking\", \"bachelor\", \"bachelorette\", \"event\"];\nlet riskSignals = [];\nlet reasoningParts = [];\nlet riskScore = 0;\n\n// --- HARD CHECK 1: Capacity Limit Violation ---\nif (guestCount > propertyCapacity) {\n  riskSignals.push(\"GUEST_COUNT_EXCEEDS_CAPACITY\");\n  reasoningParts.push(`Requested guest count (${guestCount}) exceeds property max capacity (${propertyCapacity}).`);\n  riskScore += 90; // Immediate High Risk\n}\n\n// --- HARD CHECK 2: Restricted Purpose Keyword Match ---\nconst foundKeywords = restrictedKeywords.filter(keyword => rentalPurpose.includes(keyword));\nif (foundKeywords.length > 0) {\n  riskSignals.push(\"PROHIBITED_PURPOSE_KEYWORD\");\n  reasoningParts.push(`Stated purpose contains prohibited keywords: [${foundKeywords.join(\", \")}].`);\n  riskScore += 85; // Immediate High Risk\n}\n\n// --- SOFT CHECK 3: High Capacity Usage (> 90% Capacity) ---\nif (propertyCapacity > 0 && (guestCount / propertyCapacity) >= 0.9 && guestCount > 1) {\n  if (!riskSignals.includes(\"GUEST_COUNT_EXCEEDS_CAPACITY\")) {\n    riskSignals.push(\"HIGH_CAPACITY_UTILIZATION\");\n    reasoningParts.push(`Booking size (${guestCount}) is at or near maximum capacity (${propertyCapacity}).`);\n    riskScore += 25;\n  }\n}\n\n// --- SOFT CHECK 4: Vague or Short Rental Purpose ---\nif (rentalPurpose.length < 5) {\n  riskSignals.push(\"VAGUE_RENTAL_PURPOSE\");\n  reasoningParts.push(\"Stated rental purpose is unusually brief or missing details.\");\n  riskScore += 20;\n}\n\n// 3. Final Risk Determination\n// Cap total score between 0 and 100\nconst finalRiskScore = Math.min(Math.max(riskScore, 0), 100);\n\n// Set risk level strictly to HIGH or LOW based on score threshold (>= 50 is HIGH)\nconst riskLevel = finalRiskScore >= 50 ? \"HIGH\" : \"LOW\";\nconst recommendation = riskLevel === \"HIGH\" ? \"manual_review\" : \"auto_approve\";\nconst finalReasoning = reasoningParts.length > 0 \n  ? reasoningParts.join(\" \") \n  : \"Standard booking within normal operating parameters.\";\n\n// 4. Return formatted response for downstream nodes (Airtable & Switch/IF node)\nreturn {\n  json: {\n    booking_record_id: item.booking_record_id || item.id || '',\n    booking_id: item.booking_id || '',\n    guest_name: guestName,\n    guest_email: guestEmail,\n    guest_count: guestCount,\n    property_capacity: propertyCapacity,\n    rental_purpose: item.rental_purpose || '',\n    risk_score: finalRiskScore,\n    risk_level: riskLevel, // Output: \"HIGH\" or \"LOW\"\n    risk_signals: riskSignals.length > 0 ? riskSignals.join(\", \") : \"NONE\",\n    ai_reasoning: finalReasoning,\n    recommendation: recommendation,\n    is_high_risk: riskLevel === \"HIGH\"\n  }\n};"
-      },
-      "id": "fcbca6e3-0739-4b81-b040-1c1c62d2f992",
-      "name": "4. Deterministic Hard Rules",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [
-        128,
-        -64
-      ]
     },
     {
       "parameters": {
@@ -91,7 +78,7 @@
                 "conditions": [
                   {
                     "leftValue": "HIGH",
-                    "rightValue": "={{ $json.risk_level }}",
+                    "rightValue": "={{ $json.output[0].risk_level }}",
                     "operator": {
                       "type": "string",
                       "operation": "notEquals"
@@ -114,7 +101,7 @@
                   {
                     "id": "44e67e50-eeaa-4c8c-8be1-932b3676f8d3",
                     "leftValue": "HIGH",
-                    "rightValue": "={{ $json.risk_level }}",
+                    "rightValue": "={{ $json.output[0].risk_level }}",
                     "operator": {
                       "type": "string",
                       "operation": "equals"
@@ -131,7 +118,7 @@
       "type": "n8n-nodes-base.switch",
       "typeVersion": 3.4,
       "position": [
-        352,
+        576,
         -64
       ],
       "id": "a87885af-0936-43f6-8008-6a66c3a383fd",
@@ -424,8 +411,8 @@
       "type": "n8n-nodes-base.airtable",
       "typeVersion": 2,
       "position": [
-        1184,
-        272
+        1472,
+        224
       ],
       "credentials": {
         "airtableTokenApi": {
@@ -450,13 +437,14 @@
             "values": {
               "resumeUnit": "minutes"
             }
-          }
+          },
+          "appendAttribution": true
         }
       },
       "type": "n8n-nodes-base.telegram",
       "typeVersion": 1.2,
       "position": [
-        800,
+        1024,
         32
       ],
       "id": "4b28e3de-ffdd-4c5a-bb01-d0c83be26d06",
@@ -490,16 +478,16 @@
           "mappingMode": "defineBelow",
           "value": {
             "Guest Count": "={{ $('2. Payload Schema Validation').item.json.guest_count }}",
-            "Risk Score": "={{ $('4. Deterministic Hard Rules').item.json.risk_score }}",
+            "Risk Score": "={{ $json.output[0].risk_score }}",
             "Check-out": "={{ $('2. Payload Schema Validation').item.json.check_out }}",
             "Check-in": "={{ $('2. Payload Schema Validation').item.json.check_in }}",
             "Rental Purpose": "={{ $('2. Payload Schema Validation').item.json.rental_purpose }}",
             "Guest Name": "={{ $('2. Payload Schema Validation').item.json.guest_name }}",
             "Guest Email": "={{ $('2. Payload Schema Validation').item.json.guest_email }}",
-            "Risk Level": "={{ $('4. Deterministic Hard Rules').item.json.risk_level }}",
+            "Risk Level": "={{ $json.output[0].risk_level }}",
             "Property": "={{ [ $('3. Read Property Constraints').item.json.id ] }}",
-            "Risk Signals": "={{ $('4. Deterministic Hard Rules').item.json.risk_signals }}",
-            "AI Reasoning": "={{ $('4. Deterministic Hard Rules').item.json.ai_reasoning }}",
+            "Risk Signals": "={{ $json.output[0].risk_signals }}",
+            "AI Reasoning": "={{ $json.output[0].ai_reasoning }}",
             "Booking Status": "PENDING_REVIEW"
           },
           "matchingColumns": [],
@@ -756,7 +744,7 @@
       "type": "n8n-nodes-base.airtable",
       "typeVersion": 2.2,
       "position": [
-        576,
+        800,
         32
       ],
       "id": "4cf57047-0d3e-49c8-830e-92cee2cf8a56",
@@ -886,7 +874,7 @@
       "type": "n8n-nodes-base.airtable",
       "typeVersion": 2.2,
       "position": [
-        1472,
+        1696,
         -160
       ],
       "id": "baed44af-06d7-4110-bdf3-c213116d76b2",
@@ -925,7 +913,7 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.3,
       "position": [
-        1248,
+        1472,
         -64
       ],
       "id": "db5d6917-0244-4868-8456-b92267bee40d",
@@ -1049,7 +1037,7 @@
       "type": "n8n-nodes-base.airtable",
       "typeVersion": 2.2,
       "position": [
-        1472,
+        1696,
         32
       ],
       "id": "7d113d6e-ae39-4338-a743-f4d2d81de942",
@@ -1082,16 +1070,16 @@
           "mappingMode": "defineBelow",
           "value": {
             "Guest Count": "={{ $('2. Payload Schema Validation').item.json.guest_count }}",
-            "Risk Score": "={{ $('4. Deterministic Hard Rules').item.json.risk_score }}",
+            "Risk Score": "={{ $json.output[0].risk_score }}",
             "Check-out": "={{ $('2. Payload Schema Validation').item.json.check_out }}",
             "Check-in": "={{ $('2. Payload Schema Validation').item.json.check_in }}",
             "Rental Purpose": "={{ $('2. Payload Schema Validation').item.json.rental_purpose }}",
             "Guest Name": "={{ $('2. Payload Schema Validation').item.json.guest_name }}",
             "Guest Email": "={{ $('2. Payload Schema Validation').item.json.guest_email }}",
-            "Risk Level": "={{ $('4. Deterministic Hard Rules').item.json.risk_level }}",
-            "Property": "={{ [ $('3. Read Property Constraints').item.json.id ] }}",
-            "Risk Signals": "={{ $('4. Deterministic Hard Rules').item.json.risk_signals }}",
-            "AI Reasoning": "={{ $('4. Deterministic Hard Rules').item.json.ai_reasoning }}",
+            "Risk Level": "={{ $json.output[0].risk_level }}",
+            "Property": "=",
+            "Risk Signals": "={{ $json.output[0].risk_signals }}",
+            "AI Reasoning": "={{ $json.output[0].ai_reasoning }}",
             "Booking Status": "ACCEPTED"
           },
           "matchingColumns": [],
@@ -1348,7 +1336,7 @@
       "type": "n8n-nodes-base.airtable",
       "typeVersion": 2.2,
       "position": [
-        576,
+        800,
         -160
       ],
       "id": "c88a8432-edc3-43e1-bdf6-d2162ca54309",
@@ -1380,8 +1368,6 @@
         "columns": {
           "mappingMode": "defineBelow",
           "value": {
-            "Guest Count": 0,
-            "Risk Score": 0,
             "Booking Status": "ACCEPTED",
             "Booking ID": "={{ $('Create a record').item.json.fields[\"Booking ID\"] }}"
           },
@@ -1419,7 +1405,7 @@
               "display": true,
               "type": "string",
               "readOnly": false,
-              "removed": false
+              "removed": true
             },
             {
               "id": "Guest Email",
@@ -1430,7 +1416,7 @@
               "display": true,
               "type": "string",
               "readOnly": false,
-              "removed": false
+              "removed": true
             },
             {
               "id": "Rental Purpose",
@@ -1441,7 +1427,7 @@
               "display": true,
               "type": "string",
               "readOnly": false,
-              "removed": false
+              "removed": true
             },
             {
               "id": "Guest Count",
@@ -1452,7 +1438,7 @@
               "display": true,
               "type": "number",
               "readOnly": false,
-              "removed": false
+              "removed": true
             },
             {
               "id": "Check-in",
@@ -1463,7 +1449,7 @@
               "display": true,
               "type": "dateTime",
               "readOnly": false,
-              "removed": false
+              "removed": true
             },
             {
               "id": "Check-out",
@@ -1474,7 +1460,7 @@
               "display": true,
               "type": "dateTime",
               "readOnly": false,
-              "removed": false
+              "removed": true
             },
             {
               "id": "Nights Count",
@@ -1496,7 +1482,7 @@
               "display": true,
               "type": "number",
               "readOnly": false,
-              "removed": false
+              "removed": true
             },
             {
               "id": "Risk Level",
@@ -1521,7 +1507,7 @@
                 }
               ],
               "readOnly": false,
-              "removed": false
+              "removed": true
             },
             {
               "id": "Risk Signals",
@@ -1532,7 +1518,7 @@
               "display": true,
               "type": "string",
               "readOnly": false,
-              "removed": false
+              "removed": true
             },
             {
               "id": "AI Reasoning",
@@ -1543,7 +1529,7 @@
               "display": true,
               "type": "string",
               "readOnly": false,
-              "removed": false
+              "removed": true
             },
             {
               "id": "Booking Status",
@@ -1616,7 +1602,7 @@
               "display": true,
               "type": "array",
               "readOnly": false,
-              "removed": false
+              "removed": true
             },
             {
               "id": "Owner Escalations",
@@ -1627,7 +1613,7 @@
               "display": true,
               "type": "array",
               "readOnly": false,
-              "removed": false
+              "removed": true
             },
             {
               "id": "System Logs",
@@ -1638,7 +1624,7 @@
               "display": true,
               "type": "array",
               "readOnly": false,
-              "removed": false
+              "removed": true
             }
           ],
           "attemptToConvertTypes": false,
@@ -1651,7 +1637,7 @@
       "type": "n8n-nodes-base.airtable",
       "typeVersion": 2.2,
       "position": [
-        1696,
+        1920,
         -160
       ],
       "id": "7116db33-a7e8-444a-a3b7-8e9396d02ecb",
@@ -1952,7 +1938,7 @@
       "type": "n8n-nodes-base.airtable",
       "typeVersion": 2.2,
       "position": [
-        1696,
+        1920,
         32
       ],
       "id": "74251405-3862-4805-9187-91c017b5393e",
@@ -1974,7 +1960,7 @@
       "type": "n8n-nodes-base.gmail",
       "typeVersion": 2.2,
       "position": [
-        800,
+        1024,
         -160
       ],
       "id": "92318975-4274-4665-bc78-e63815bfd21a",
@@ -1997,7 +1983,7 @@
       "type": "n8n-nodes-base.gmail",
       "typeVersion": 2.2,
       "position": [
-        1920,
+        2144,
         -160
       ],
       "id": "00a483d6-0b35-4e52-8361-b9842c8858ac",
@@ -2037,7 +2023,7 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.3,
       "position": [
-        1024,
+        1248,
         32
       ],
       "id": "a294be8f-6bcb-439d-b96d-c64421094010",
@@ -2053,7 +2039,7 @@
       "type": "n8n-nodes-base.gmail",
       "typeVersion": 2.2,
       "position": [
-        1920,
+        2144,
         32
       ],
       "id": "4129ac27-07f0-4c9b-aad6-f3503abed40d",
@@ -2076,8 +2062,8 @@
       "type": "n8n-nodes-base.gmail",
       "typeVersion": 2.2,
       "position": [
-        1392,
-        272
+        1696,
+        224
       ],
       "id": "554adb59-1d3a-41a3-8f75-7c328dd2c946",
       "name": "Send a message3",
@@ -2088,6 +2074,68 @@
           "name": "Gmail account"
         }
       }
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=You are a guest-risk screening agent for a short-term rental platform.\n\nAssess the booking request using ONLY the information provided.\n\nConsider:\n- Number of guests compared with property capacity\n- Rental purpose\n- Guest review information, if provided\n\nIdentify specific risk signals.\n\nClassify the booking as:\n- LOW\n- HIGH\n\nDo not make assumptions about the guest based on protected or unrelated personal characteristics. If it is high, recommend manual review\nHere are the details you need:\nGuest Name:{{ $('2. Payload Schema Validation').item.json.guest_name }}\nGuest Email:{{ $('2. Payload Schema Validation').item.json.guest_email }}\n[no. of guests: {{ $('2. Payload Schema Validation').item.json.guest_count }}\nProperty capacity:{{ $json.Capacity }}]\n[Rental purpose:{{ $('2. Payload Schema Validation').item.json.rental_purpose }}\nHouse Rules: {{ $json[\"House Rules\"] }}]\nReturn your assessment in the required structured format. ",
+        "hasOutputParser": true,
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3.1,
+      "position": [
+        176,
+        -64
+      ],
+      "id": "c3810bb5-9aa4-4734-ad8e-77124ead9ade",
+      "name": "AI Agent"
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1.1,
+      "position": [
+        112,
+        160
+      ],
+      "id": "9692ae52-1707-416f-ad8a-b44cd56ead6b",
+      "name": "Google Gemini Chat Model",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "12U5Bxeunc8vGyNE",
+          "name": "Google Gemini(PaLM) Api account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsonSchemaExample": "[\n{\n\"guest_name\": \"Sola\",\n\"guest_email\": \"ayomidedaniel200711@gmail.com\",\n\"guest_count\": 6,\n\"property_capacity\": 4,  \n\"rental_purpose\": \"Business\", \n\"risk_score\": 90,\n\"risk_level\": \"HIGH\",\n\"risk_signals\": \"GUEST_COUNT_EXCEEDS_CAPACITY\",\n\"ai_reasoning\": \"Requested guest count (6) exceeds property max capacity (4).\",\n\"recommendation\": \"manual_review\", \n\"is_high_risk\": true  \n}\n]"
+      },
+      "type": "@n8n/n8n-nodes-langchain.outputParserStructured",
+      "typeVersion": 1.3,
+      "position": [
+        368,
+        160
+      ],
+      "id": "4a95d374-fd52-4226-b0c5-23ca530e722f",
+      "name": "Structured Output Parser"
+    },
+    {
+      "parameters": {
+        "sessionIdType": "customKey",
+        "sessionKey": "={{ $('3. Read Property Constraints').item.json.id }}"
+      },
+      "type": "@n8n/n8n-nodes-langchain.memoryBufferWindow",
+      "typeVersion": 1.4,
+      "position": [
+        240,
+        160
+      ],
+      "id": "d94f4a65-bbb4-4c0c-b498-6f07fe5b9f4f",
+      "name": "Simple Memory"
     }
   ],
   "pinData": {},
@@ -2118,18 +2166,7 @@
       "main": [
         [
           {
-            "node": "4. Deterministic Hard Rules",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "4. Deterministic Hard Rules": {
-      "main": [
-        [
-          {
-            "node": "Switch",
+            "node": "AI Agent",
             "type": "main",
             "index": 0
           }
@@ -2278,6 +2315,55 @@
           }
         ]
       ]
+    },
+    "AI Agent": {
+      "main": [
+        [
+          {
+            "node": "Switch",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Gemini Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Structured Output Parser": {
+      "ai_outputParser": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_outputParser",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Simple Memory": {
+      "ai_memory": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_memory",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send a message3": {
+      "main": [
+        []
+      ]
     }
   },
   "active": true,
@@ -2290,7 +2376,7 @@
     "callerPolicy": "workflowsFromSameOwner",
     "availableInMCP": false
   },
-  "versionId": "ba92c9cc-0973-4aae-9661-9d65eecfb516",
+  "versionId": "5e233bd9-1780-4fa5-a687-f4ba60857c80",
   "meta": {
     "templateCredsSetupCompleted": true,
     "instanceId": "1de021c500a569c3d14d073e917737d9e9c20aef616e57ba1a93f6ed4235d263"

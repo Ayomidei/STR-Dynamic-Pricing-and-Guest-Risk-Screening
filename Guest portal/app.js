@@ -8,11 +8,11 @@
 // ---------------------------------------------------------------------------
 const CONFIG = {
   // Airtable REST API details for direct property catalog fetching
-  AIRTABLE_API_KEY: 'your_airtable_personal_access_token_here', // Replace with your Personal Access Token
-  AIRTABLE_BASE_ID: 'your_airtable_base_id_here', // Replace with your Airtable Base ID
+  AIRTABLE_API_KEY: 'YOUR_AIRTABLE_API_KEY', // Replace with your Personal Access Token
+  AIRTABLE_BASE_ID: 'YOUR_AIRTABLE_BASE_ID', // Replace with your Airtable Base ID
   
   // Replace this URL once your n8n Webhook node is live in Phase 4
-  N8N_WEBHOOK_URL: 'https://your-n8n-instance.com/webhook/booking-request'
+  N8N_WEBHOOK_URL: 'https://Your-n8n-Instance/webhook/booking-request'
 };
 
 // Static Fallback Properties (Used if Airtable Fetch fails or keys are unset)
