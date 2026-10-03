@@ -1,0 +1,2301 @@
+{
+  "name": "Booking Risk Engine",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "booking-request",
+        "options": {}
+      },
+      "id": "f56e02c7-21c0-455b-9825-760136d42ae5",
+      "name": "1. Webhook (POST /booking-request)",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        -544,
+        -64
+      ],
+      "webhookId": "08a80b83-46f7-4ede-b65d-14b77ddb2d4e"
+    },
+    {
+      "parameters": {
+        "jsCode": "const payload = $input.item.json.body || $input.item.json;\nreturn {\n  json: {\n    property_id: payload.property_id || '',\n    guest_name: String(payload.guest_name || '').trim(),\n    guest_email: String(payload.guest_email || '').toLowerCase().trim(),\n    check_in: payload.check_in || '',\n    check_out: payload.check_out || '',\n    guest_count: Number(payload.guest_count || 1),\n    rental_purpose: String(payload.rental_purpose || '').trim()\n  }\n};"
+      },
+      "id": "91fc162e-8af5-40a4-9a5f-e38450785b3a",
+      "name": "2. Payload Schema Validation",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -320,
+        -64
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "search",
+        "base": {
+          "__rl": true,
+          "value": "apppjeUadHRQGGv7O",
+          "mode": "id"
+        },
+        "table": {
+          "__rl": true,
+          "value": "tblcyXwv9oaVWci57",
+          "mode": "list",
+          "cachedResultName": "Properties",
+          "cachedResultUrl": "https://airtable.com/apppjeUadHRQGGv7O/tblcyXwv9oaVWci57"
+        },
+        "filterByFormula": "=({Property ID} = '{{ $json.property_id }}')",
+        "options": {}
+      },
+      "id": "2bf91ec5-9d77-4389-a0f5-39b1c88775a2",
+      "name": "3. Read Property Constraints",
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2,
+      "position": [
+        -96,
+        -64
+      ],
+      "credentials": {
+        "airtableTokenApi": {
+          "id": "yR2piwWrdohV4ZiA",
+          "name": "Airtable Personal Access Token account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// 1. Retrieve booking request payload and property context\nconst item = $('2. Payload Schema Validation').first().json;\n\nconst guestName = item.guest_name || 'Guest';\nconst guestEmail = item.guest_email || '';\nconst guestCount = Number(item.guest_count || 0);\nconst propertyCapacity = Number($input.first().json.Capacity || 0);\nconst rentalPurpose = (item.rental_purpose || '').toLowerCase();\n\n// 2. Define risk rules and configuration\nconst restrictedKeywords = [\"party\", \"birthday\", \"wedding\", \"rave\", \"smoking\", \"bachelor\", \"bachelorette\", \"event\"];\nlet riskSignals = [];\nlet reasoningParts = [];\nlet riskScore = 0;\n\n// --- HARD CHECK 1: Capacity Limit Violation ---\nif (guestCount > propertyCapacity) {\n  riskSignals.push(\"GUEST_COUNT_EXCEEDS_CAPACITY\");\n  reasoningParts.push(`Requested guest count (${guestCount}) exceeds property max capacity (${propertyCapacity}).`);\n  riskScore += 90; // Immediate High Risk\n}\n\n// --- HARD CHECK 2: Restricted Purpose Keyword Match ---\nconst foundKeywords = restrictedKeywords.filter(keyword => rentalPurpose.includes(keyword));\nif (foundKeywords.length > 0) {\n  riskSignals.push(\"PROHIBITED_PURPOSE_KEYWORD\");\n  reasoningParts.push(`Stated purpose contains prohibited keywords: [${foundKeywords.join(\", \")}].`);\n  riskScore += 85; // Immediate High Risk\n}\n\n// --- SOFT CHECK 3: High Capacity Usage (> 90% Capacity) ---\nif (propertyCapacity > 0 && (guestCount / propertyCapacity) >= 0.9 && guestCount > 1) {\n  if (!riskSignals.includes(\"GUEST_COUNT_EXCEEDS_CAPACITY\")) {\n    riskSignals.push(\"HIGH_CAPACITY_UTILIZATION\");\n    reasoningParts.push(`Booking size (${guestCount}) is at or near maximum capacity (${propertyCapacity}).`);\n    riskScore += 25;\n  }\n}\n\n// --- SOFT CHECK 4: Vague or Short Rental Purpose ---\nif (rentalPurpose.length < 5) {\n  riskSignals.push(\"VAGUE_RENTAL_PURPOSE\");\n  reasoningParts.push(\"Stated rental purpose is unusually brief or missing details.\");\n  riskScore += 20;\n}\n\n// 3. Final Risk Determination\n// Cap total score between 0 and 100\nconst finalRiskScore = Math.min(Math.max(riskScore, 0), 100);\n\n// Set risk level strictly to HIGH or LOW based on score threshold (>= 50 is HIGH)\nconst riskLevel = finalRiskScore >= 50 ? \"HIGH\" : \"LOW\";\nconst recommendation = riskLevel === \"HIGH\" ? \"manual_review\" : \"auto_approve\";\nconst finalReasoning = reasoningParts.length > 0 \n  ? reasoningParts.join(\" \") \n  : \"Standard booking within normal operating parameters.\";\n\n// 4. Return formatted response for downstream nodes (Airtable & Switch/IF node)\nreturn {\n  json: {\n    booking_record_id: item.booking_record_id || item.id || '',\n    booking_id: item.booking_id || '',\n    guest_name: guestName,\n    guest_email: guestEmail,\n    guest_count: guestCount,\n    property_capacity: propertyCapacity,\n    rental_purpose: item.rental_purpose || '',\n    risk_score: finalRiskScore,\n    risk_level: riskLevel, // Output: \"HIGH\" or \"LOW\"\n    risk_signals: riskSignals.length > 0 ? riskSignals.join(\", \") : \"NONE\",\n    ai_reasoning: finalReasoning,\n    recommendation: recommendation,\n    is_high_risk: riskLevel === \"HIGH\"\n  }\n};"
+      },
+      "id": "fcbca6e3-0739-4b81-b040-1c1c62d2f992",
+      "name": "4. Deterministic Hard Rules",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        128,
+        -64
+      ]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "leftValue": "HIGH",
+                    "rightValue": "={{ $json.risk_level }}",
+                    "operator": {
+                      "type": "string",
+                      "operation": "notEquals"
+                    },
+                    "id": "838a709b-622f-419a-89aa-fb1d6a7b8284"
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "44e67e50-eeaa-4c8c-8be1-932b3676f8d3",
+                    "leftValue": "HIGH",
+                    "rightValue": "={{ $json.risk_level }}",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.4,
+      "position": [
+        352,
+        -64
+      ],
+      "id": "a87885af-0936-43f6-8008-6a66c3a383fd",
+      "name": "Switch"
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "base": {
+          "__rl": true,
+          "value": "apppjeUadHRQGGv7O",
+          "mode": "id"
+        },
+        "table": {
+          "__rl": true,
+          "value": "tblYWO05mhtP6JjQa",
+          "mode": "list",
+          "cachedResultName": "Bookings",
+          "cachedResultUrl": "https://airtable.com/apppjeUadHRQGGv7O/tblYWO05mhtP6JjQa"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Booking ID": "={{ $json.fields[\"Booking ID\"] }}",
+            "Booking Status": "EXPIRED"
+          },
+          "matchingColumns": [
+            "Booking ID"
+          ],
+          "schema": [
+            {
+              "id": "id",
+              "displayName": "id",
+              "required": false,
+              "defaultMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": true,
+              "removed": true
+            },
+            {
+              "id": "Booking ID",
+              "displayName": "Booking ID",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": true,
+              "removed": false
+            },
+            {
+              "id": "Guest Name",
+              "displayName": "Guest Name",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": true
+            },
+            {
+              "id": "Guest Email",
+              "displayName": "Guest Email",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": true
+            },
+            {
+              "id": "Rental Purpose",
+              "displayName": "Rental Purpose",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": true
+            },
+            {
+              "id": "Guest Count",
+              "displayName": "Guest Count",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "number",
+              "readOnly": false,
+              "removed": true
+            },
+            {
+              "id": "Check-in",
+              "displayName": "Check-in",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "dateTime",
+              "readOnly": false,
+              "removed": true
+            },
+            {
+              "id": "Check-out",
+              "displayName": "Check-out",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "dateTime",
+              "readOnly": false,
+              "removed": true
+            },
+            {
+              "id": "Nights Count",
+              "displayName": "Nights Count",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": true,
+              "removed": true
+            },
+            {
+              "id": "Risk Score",
+              "displayName": "Risk Score",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "number",
+              "readOnly": false,
+              "removed": true
+            },
+            {
+              "id": "Risk Level",
+              "displayName": "Risk Level",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "options",
+              "options": [
+                {
+                  "name": "LOW",
+                  "value": "LOW"
+                },
+                {
+                  "name": "HIGH",
+                  "value": "HIGH"
+                },
+                {
+                  "name": "MEDIUM",
+                  "value": "MEDIUM"
+                }
+              ],
+              "readOnly": false,
+              "removed": true
+            },
+            {
+              "id": "Risk Signals",
+              "displayName": "Risk Signals",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": true
+            },
+            {
+              "id": "AI Reasoning",
+              "displayName": "AI Reasoning",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": true
+            },
+            {
+              "id": "Booking Status",
+              "displayName": "Booking Status",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "options",
+              "options": [
+                {
+                  "name": "PENDING_REVIEW",
+                  "value": "PENDING_REVIEW"
+                },
+                {
+                  "name": "ACCEPTED",
+                  "value": "ACCEPTED"
+                },
+                {
+                  "name": "DECLINED",
+                  "value": "DECLINED"
+                },
+                {
+                  "name": "EXPIRED",
+                  "value": "EXPIRED"
+                }
+              ],
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Submission Time",
+              "displayName": "Submission Time",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": true,
+              "removed": true
+            },
+            {
+              "id": "Review Deadline",
+              "displayName": "Review Deadline",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": true,
+              "removed": true
+            },
+            {
+              "id": "Is Expired?",
+              "displayName": "Is Expired?",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": true,
+              "removed": true
+            },
+            {
+              "id": "Property",
+              "displayName": "Property",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "array",
+              "readOnly": false,
+              "removed": true
+            },
+            {
+              "id": "Owner Escalations",
+              "displayName": "Owner Escalations",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "array",
+              "readOnly": false,
+              "removed": true
+            },
+            {
+              "id": "System Logs",
+              "displayName": "System Logs",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "array",
+              "readOnly": false,
+              "removed": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "id": "1dfe9b19-8627-4141-82dc-b9d0ad96ab2a",
+      "name": "WF-4: Set Status EXPIRED",
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2,
+      "position": [
+        1184,
+        272
+      ],
+      "credentials": {
+        "airtableTokenApi": {
+          "id": "yR2piwWrdohV4ZiA",
+          "name": "Airtable Personal Access Token account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "sendAndWait",
+        "chatId": "5099171280",
+        "message": "=🚨 HIGH RISK BOOKING ESCALATION\n\nPROPERTY ID: {{ $('2. Payload Schema Validation').item.json.property_id }}\nGuest: {{ $json.fields[\"Guest Name\"] }} ({{ $json.fields[\"Guest Email\"] }})\nProperty: {{ $('3. Read Property Constraints').item.json[\"Property Name\"] }}\nDates: {{ $('2. Payload Schema Validation').item.json.check_in }} to {{ $('2. Payload Schema Validation').item.json.check_out }}\nGuests: {{ $json.fields[\"Guest Count\"] }} / Capacity: {{ $('3. Read Property Constraints').item.json.Capacity }}\nPurpose: {{ $json.fields[\"Rental Purpose\"] }}\n\nRisk Score: 🔴{{ $json.fields[\"Risk Score\"] }}/100 ({{ $json.risk_level || 'HIGH' }})\nSignals: {{ $json.fields[\"Risk Signals\"] }}\nReasoning: {{ $json.fields[\"AI Reasoning\"] }}\n\n⚠️ Action Required: Please accept or decline within 1 hour.",
+        "approvalOptions": {
+          "values": {
+            "approvalType": "double",
+            "approveLabel": "✅ Accept"
+          }
+        },
+        "options": {
+          "limitWaitTime": {
+            "values": {
+              "resumeUnit": "minutes"
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        800,
+        32
+      ],
+      "id": "4b28e3de-ffdd-4c5a-bb01-d0c83be26d06",
+      "name": "Send message and wait for response",
+      "webhookId": "04111714-e46d-4a63-b729-8bb4f1fbd461",
+      "credentials": {
+        "telegramApi": {
+          "id": "xkMNvydGCbmZMG2t",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "create",
+        "base": {
+          "__rl": true,
+          "value": "apppjeUadHRQGGv7O",
+          "mode": "list",
+          "cachedResultName": "properties",
+          "cachedResultUrl": "https://airtable.com/apppjeUadHRQGGv7O"
+        },
+        "table": {
+          "__rl": true,
+          "value": "tblYWO05mhtP6JjQa",
+          "mode": "list",
+          "cachedResultName": "Bookings",
+          "cachedResultUrl": "https://airtable.com/apppjeUadHRQGGv7O/tblYWO05mhtP6JjQa"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Guest Count": "={{ $('2. Payload Schema Validation').item.json.guest_count }}",
+            "Risk Score": "={{ $('4. Deterministic Hard Rules').item.json.risk_score }}",
+            "Check-out": "={{ $('2. Payload Schema Validation').item.json.check_out }}",
+            "Check-in": "={{ $('2. Payload Schema Validation').item.json.check_in }}",
+            "Rental Purpose": "={{ $('2. Payload Schema Validation').item.json.rental_purpose }}",
+            "Guest Name": "={{ $('2. Payload Schema Validation').item.json.guest_name }}",
+            "Guest Email": "={{ $('2. Payload Schema Validation').item.json.guest_email }}",
+            "Risk Level": "={{ $('4. Deterministic Hard Rules').item.json.risk_level }}",
+            "Property": "={{ [ $('3. Read Property Constraints').item.json.id ] }}",
+            "Risk Signals": "={{ $('4. Deterministic Hard Rules').item.json.risk_signals }}",
+            "AI Reasoning": "={{ $('4. Deterministic Hard Rules').item.json.ai_reasoning }}",
+            "Booking Status": "PENDING_REVIEW"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "Booking ID",
+              "displayName": "Booking ID",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": true,
+              "removed": true
+            },
+            {
+              "id": "Guest Name",
+              "displayName": "Guest Name",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Guest Email",
+              "displayName": "Guest Email",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Rental Purpose",
+              "displayName": "Rental Purpose",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Guest Count",
+              "displayName": "Guest Count",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "number",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Check-in",
+              "displayName": "Check-in",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "dateTime",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Check-out",
+              "displayName": "Check-out",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "dateTime",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Nights Count",
+              "displayName": "Nights Count",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": true,
+              "removed": true
+            },
+            {
+              "id": "Risk Score",
+              "displayName": "Risk Score",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "number",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Risk Level",
+              "displayName": "Risk Level",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "options",
+              "options": [
+                {
+                  "name": "LOW",
+                  "value": "LOW"
+                },
+                {
+                  "name": "HIGH",
+                  "value": "HIGH"
+                },
+                {
+                  "name": "MEDIUM",
+                  "value": "MEDIUM"
+                }
+              ],
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Risk Signals",
+              "displayName": "Risk Signals",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "AI Reasoning",
+              "displayName": "AI Reasoning",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Booking Status",
+              "displayName": "Booking Status",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "options",
+              "options": [
+                {
+                  "name": "PENDING_REVIEW",
+                  "value": "PENDING_REVIEW"
+                },
+                {
+                  "name": "ACCEPTED",
+                  "value": "ACCEPTED"
+                },
+                {
+                  "name": "DECLINED",
+                  "value": "DECLINED"
+                },
+                {
+                  "name": "EXPIRED",
+                  "value": "EXPIRED"
+                }
+              ],
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Submission Time",
+              "displayName": "Submission Time",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": true,
+              "removed": true
+            },
+            {
+              "id": "Review Deadline",
+              "displayName": "Review Deadline",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": true,
+              "removed": true
+            },
+            {
+              "id": "Is Expired?",
+              "displayName": "Is Expired?",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": true,
+              "removed": true
+            },
+            {
+              "id": "Property",
+              "displayName": "Property",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "array",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Owner Escalations",
+              "displayName": "Owner Escalations",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "array",
+              "readOnly": false,
+              "removed": true
+            },
+            {
+              "id": "System Logs",
+              "displayName": "System Logs",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "array",
+              "readOnly": false,
+              "removed": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {
+          "typecast": true
+        }
+      },
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2.2,
+      "position": [
+        576,
+        32
+      ],
+      "id": "4cf57047-0d3e-49c8-830e-92cee2cf8a56",
+      "name": "Create a record",
+      "credentials": {
+        "airtableTokenApi": {
+          "id": "yR2piwWrdohV4ZiA",
+          "name": "Airtable Personal Access Token account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "upsert",
+        "base": {
+          "__rl": true,
+          "value": "apppjeUadHRQGGv7O",
+          "mode": "list",
+          "cachedResultName": "properties",
+          "cachedResultUrl": "https://airtable.com/apppjeUadHRQGGv7O"
+        },
+        "table": {
+          "__rl": true,
+          "value": "tblvLxf9fjSrBI01b",
+          "mode": "list",
+          "cachedResultName": "Owner Escalations",
+          "cachedResultUrl": "https://airtable.com/apppjeUadHRQGGv7O/tblvLxf9fjSrBI01b"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Action Timestamp": "={{new Date()}}",
+            "Booking": "={{ $('Create a record').item.json.fields[\"Booking ID\"] }}",
+            "Owner Action": "ACCEPTED"
+          },
+          "matchingColumns": [
+            "id"
+          ],
+          "schema": [
+            {
+              "id": "id",
+              "displayName": "id",
+              "required": false,
+              "defaultMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": true,
+              "removed": false
+            },
+            {
+              "id": "Escalation ID",
+              "displayName": "Escalation ID",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": true,
+              "removed": true
+            },
+            {
+              "id": "Owner Action",
+              "displayName": "Owner Action",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "options",
+              "options": [
+                {
+                  "name": "ACCEPTED",
+                  "value": "ACCEPTED"
+                },
+                {
+                  "name": "DECLINED",
+                  "value": "DECLINED"
+                },
+                {
+                  "name": "EXPIRED_NO_ACTION",
+                  "value": "EXPIRED_NO_ACTION"
+                }
+              ],
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Action Timestamp",
+              "displayName": "Action Timestamp",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "dateTime",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Response Time Sec",
+              "displayName": "Response Time Sec",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": true,
+              "removed": true
+            },
+            {
+              "id": "Booking",
+              "displayName": "Booking",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "array",
+              "readOnly": false,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {
+          "typecast": true
+        }
+      },
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2.2,
+      "position": [
+        1472,
+        -160
+      ],
+      "id": "baed44af-06d7-4110-bdf3-c213116d76b2",
+      "name": "Create or update a record",
+      "credentials": {
+        "airtableTokenApi": {
+          "id": "yR2piwWrdohV4ZiA",
+          "name": "Airtable Personal Access Token account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "51a278b3-7847-427c-bdca-40a7b2d9dce4",
+              "leftValue": "={{ $json.data.approved }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        1248,
+        -64
+      ],
+      "id": "db5d6917-0244-4868-8456-b92267bee40d",
+      "name": "If"
+    },
+    {
+      "parameters": {
+        "operation": "upsert",
+        "base": {
+          "__rl": true,
+          "value": "apppjeUadHRQGGv7O",
+          "mode": "list",
+          "cachedResultName": "properties",
+          "cachedResultUrl": "https://airtable.com/apppjeUadHRQGGv7O"
+        },
+        "table": {
+          "__rl": true,
+          "value": "tblvLxf9fjSrBI01b",
+          "mode": "list",
+          "cachedResultName": "Owner Escalations",
+          "cachedResultUrl": "https://airtable.com/apppjeUadHRQGGv7O/tblvLxf9fjSrBI01b"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Action Timestamp": "={{new Date()}}",
+            "Booking": "={{ $('Create a record').item.json.fields[\"Booking ID\"] }}",
+            "Owner Action": "DECLINED"
+          },
+          "matchingColumns": [
+            "id"
+          ],
+          "schema": [
+            {
+              "id": "id",
+              "displayName": "id",
+              "required": false,
+              "defaultMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": true,
+              "removed": false
+            },
+            {
+              "id": "Escalation ID",
+              "displayName": "Escalation ID",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": true,
+              "removed": true
+            },
+            {
+              "id": "Owner Action",
+              "displayName": "Owner Action",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "options",
+              "options": [
+                {
+                  "name": "ACCEPTED",
+                  "value": "ACCEPTED"
+                },
+                {
+                  "name": "DECLINED",
+                  "value": "DECLINED"
+                },
+                {
+                  "name": "EXPIRED_NO_ACTION",
+                  "value": "EXPIRED_NO_ACTION"
+                }
+              ],
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Action Timestamp",
+              "displayName": "Action Timestamp",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "dateTime",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Response Time Sec",
+              "displayName": "Response Time Sec",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": true,
+              "removed": true
+            },
+            {
+              "id": "Booking",
+              "displayName": "Booking",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "array",
+              "readOnly": false,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {
+          "typecast": true
+        }
+      },
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2.2,
+      "position": [
+        1472,
+        32
+      ],
+      "id": "7d113d6e-ae39-4338-a743-f4d2d81de942",
+      "name": "Create or update a record1",
+      "credentials": {
+        "airtableTokenApi": {
+          "id": "yR2piwWrdohV4ZiA",
+          "name": "Airtable Personal Access Token account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "create",
+        "base": {
+          "__rl": true,
+          "value": "apppjeUadHRQGGv7O",
+          "mode": "list",
+          "cachedResultName": "properties",
+          "cachedResultUrl": "https://airtable.com/apppjeUadHRQGGv7O"
+        },
+        "table": {
+          "__rl": true,
+          "value": "tblYWO05mhtP6JjQa",
+          "mode": "list",
+          "cachedResultName": "Bookings",
+          "cachedResultUrl": "https://airtable.com/apppjeUadHRQGGv7O/tblYWO05mhtP6JjQa"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Guest Count": "={{ $('2. Payload Schema Validation').item.json.guest_count }}",
+            "Risk Score": "={{ $('4. Deterministic Hard Rules').item.json.risk_score }}",
+            "Check-out": "={{ $('2. Payload Schema Validation').item.json.check_out }}",
+            "Check-in": "={{ $('2. Payload Schema Validation').item.json.check_in }}",
+            "Rental Purpose": "={{ $('2. Payload Schema Validation').item.json.rental_purpose }}",
+            "Guest Name": "={{ $('2. Payload Schema Validation').item.json.guest_name }}",
+            "Guest Email": "={{ $('2. Payload Schema Validation').item.json.guest_email }}",
+            "Risk Level": "={{ $('4. Deterministic Hard Rules').item.json.risk_level }}",
+            "Property": "={{ [ $('3. Read Property Constraints').item.json.id ] }}",
+            "Risk Signals": "={{ $('4. Deterministic Hard Rules').item.json.risk_signals }}",
+            "AI Reasoning": "={{ $('4. Deterministic Hard Rules').item.json.ai_reasoning }}",
+            "Booking Status": "ACCEPTED"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "Booking ID",
+              "displayName": "Booking ID",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": true,
+              "removed": true
+            },
+            {
+              "id": "Guest Name",
+              "displayName": "Guest Name",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Guest Email",
+              "displayName": "Guest Email",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Rental Purpose",
+              "displayName": "Rental Purpose",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Guest Count",
+              "displayName": "Guest Count",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "number",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Check-in",
+              "displayName": "Check-in",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "dateTime",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Check-out",
+              "displayName": "Check-out",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "dateTime",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Nights Count",
+              "displayName": "Nights Count",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": true,
+              "removed": true
+            },
+            {
+              "id": "Risk Score",
+              "displayName": "Risk Score",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "number",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Risk Level",
+              "displayName": "Risk Level",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "options",
+              "options": [
+                {
+                  "name": "LOW",
+                  "value": "LOW"
+                },
+                {
+                  "name": "HIGH",
+                  "value": "HIGH"
+                },
+                {
+                  "name": "MEDIUM",
+                  "value": "MEDIUM"
+                }
+              ],
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Risk Signals",
+              "displayName": "Risk Signals",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "AI Reasoning",
+              "displayName": "AI Reasoning",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Booking Status",
+              "displayName": "Booking Status",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "options",
+              "options": [
+                {
+                  "name": "PENDING_REVIEW",
+                  "value": "PENDING_REVIEW"
+                },
+                {
+                  "name": "ACCEPTED",
+                  "value": "ACCEPTED"
+                },
+                {
+                  "name": "DECLINED",
+                  "value": "DECLINED"
+                },
+                {
+                  "name": "EXPIRED",
+                  "value": "EXPIRED"
+                }
+              ],
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Submission Time",
+              "displayName": "Submission Time",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": true,
+              "removed": true
+            },
+            {
+              "id": "Review Deadline",
+              "displayName": "Review Deadline",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": true,
+              "removed": true
+            },
+            {
+              "id": "Is Expired?",
+              "displayName": "Is Expired?",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": true,
+              "removed": true
+            },
+            {
+              "id": "Property",
+              "displayName": "Property",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "array",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Owner Escalations",
+              "displayName": "Owner Escalations",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "array",
+              "readOnly": false,
+              "removed": true
+            },
+            {
+              "id": "System Logs",
+              "displayName": "System Logs",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "array",
+              "readOnly": false,
+              "removed": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {
+          "typecast": true
+        }
+      },
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2.2,
+      "position": [
+        576,
+        -160
+      ],
+      "id": "c88a8432-edc3-43e1-bdf6-d2162ca54309",
+      "name": "Create a record1",
+      "credentials": {
+        "airtableTokenApi": {
+          "id": "yR2piwWrdohV4ZiA",
+          "name": "Airtable Personal Access Token account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "base": {
+          "__rl": true,
+          "value": "apppjeUadHRQGGv7O",
+          "mode": "list",
+          "cachedResultName": "properties",
+          "cachedResultUrl": "https://airtable.com/apppjeUadHRQGGv7O"
+        },
+        "table": {
+          "__rl": true,
+          "value": "tblYWO05mhtP6JjQa",
+          "mode": "list",
+          "cachedResultName": "Bookings",
+          "cachedResultUrl": "https://airtable.com/apppjeUadHRQGGv7O/tblYWO05mhtP6JjQa"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Guest Count": 0,
+            "Risk Score": 0,
+            "Booking Status": "ACCEPTED",
+            "Booking ID": "={{ $('Create a record').item.json.fields[\"Booking ID\"] }}"
+          },
+          "matchingColumns": [
+            "Booking ID"
+          ],
+          "schema": [
+            {
+              "id": "id",
+              "displayName": "id",
+              "required": false,
+              "defaultMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": true,
+              "removed": true
+            },
+            {
+              "id": "Booking ID",
+              "displayName": "Booking ID",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": true,
+              "removed": false
+            },
+            {
+              "id": "Guest Name",
+              "displayName": "Guest Name",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Guest Email",
+              "displayName": "Guest Email",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Rental Purpose",
+              "displayName": "Rental Purpose",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Guest Count",
+              "displayName": "Guest Count",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "number",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Check-in",
+              "displayName": "Check-in",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "dateTime",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Check-out",
+              "displayName": "Check-out",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "dateTime",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Nights Count",
+              "displayName": "Nights Count",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": true,
+              "removed": true
+            },
+            {
+              "id": "Risk Score",
+              "displayName": "Risk Score",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "number",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Risk Level",
+              "displayName": "Risk Level",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "options",
+              "options": [
+                {
+                  "name": "LOW",
+                  "value": "LOW"
+                },
+                {
+                  "name": "HIGH",
+                  "value": "HIGH"
+                },
+                {
+                  "name": "MEDIUM",
+                  "value": "MEDIUM"
+                }
+              ],
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Risk Signals",
+              "displayName": "Risk Signals",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "AI Reasoning",
+              "displayName": "AI Reasoning",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Booking Status",
+              "displayName": "Booking Status",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "options",
+              "options": [
+                {
+                  "name": "PENDING_REVIEW",
+                  "value": "PENDING_REVIEW"
+                },
+                {
+                  "name": "ACCEPTED",
+                  "value": "ACCEPTED"
+                },
+                {
+                  "name": "DECLINED",
+                  "value": "DECLINED"
+                },
+                {
+                  "name": "EXPIRED",
+                  "value": "EXPIRED"
+                }
+              ],
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Submission Time",
+              "displayName": "Submission Time",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": true,
+              "removed": true
+            },
+            {
+              "id": "Review Deadline",
+              "displayName": "Review Deadline",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": true,
+              "removed": true
+            },
+            {
+              "id": "Is Expired?",
+              "displayName": "Is Expired?",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": true,
+              "removed": true
+            },
+            {
+              "id": "Property",
+              "displayName": "Property",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "array",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Owner Escalations",
+              "displayName": "Owner Escalations",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "array",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "System Logs",
+              "displayName": "System Logs",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "array",
+              "readOnly": false,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {
+          "typecast": true
+        }
+      },
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2.2,
+      "position": [
+        1696,
+        -160
+      ],
+      "id": "7116db33-a7e8-444a-a3b7-8e9396d02ecb",
+      "name": "Update record",
+      "credentials": {
+        "airtableTokenApi": {
+          "id": "yR2piwWrdohV4ZiA",
+          "name": "Airtable Personal Access Token account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "base": {
+          "__rl": true,
+          "value": "apppjeUadHRQGGv7O",
+          "mode": "list",
+          "cachedResultName": "properties",
+          "cachedResultUrl": "https://airtable.com/apppjeUadHRQGGv7O"
+        },
+        "table": {
+          "__rl": true,
+          "value": "tblYWO05mhtP6JjQa",
+          "mode": "list",
+          "cachedResultName": "Bookings",
+          "cachedResultUrl": "https://airtable.com/apppjeUadHRQGGv7O/tblYWO05mhtP6JjQa"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Booking Status": "DECLINED",
+            "Booking ID": "={{ $('Create a record').item.json.fields[\"Booking ID\"] }}"
+          },
+          "matchingColumns": [
+            "Booking ID"
+          ],
+          "schema": [
+            {
+              "id": "id",
+              "displayName": "id",
+              "required": false,
+              "defaultMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": true,
+              "removed": true
+            },
+            {
+              "id": "Booking ID",
+              "displayName": "Booking ID",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": true,
+              "removed": false
+            },
+            {
+              "id": "Guest Name",
+              "displayName": "Guest Name",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": true
+            },
+            {
+              "id": "Guest Email",
+              "displayName": "Guest Email",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": true
+            },
+            {
+              "id": "Rental Purpose",
+              "displayName": "Rental Purpose",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": true
+            },
+            {
+              "id": "Guest Count",
+              "displayName": "Guest Count",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "number",
+              "readOnly": false,
+              "removed": true
+            },
+            {
+              "id": "Check-in",
+              "displayName": "Check-in",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "dateTime",
+              "readOnly": false,
+              "removed": true
+            },
+            {
+              "id": "Check-out",
+              "displayName": "Check-out",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "dateTime",
+              "readOnly": false,
+              "removed": true
+            },
+            {
+              "id": "Nights Count",
+              "displayName": "Nights Count",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": true,
+              "removed": true
+            },
+            {
+              "id": "Risk Score",
+              "displayName": "Risk Score",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "number",
+              "readOnly": false,
+              "removed": true
+            },
+            {
+              "id": "Risk Level",
+              "displayName": "Risk Level",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "options",
+              "options": [
+                {
+                  "name": "LOW",
+                  "value": "LOW"
+                },
+                {
+                  "name": "HIGH",
+                  "value": "HIGH"
+                },
+                {
+                  "name": "MEDIUM",
+                  "value": "MEDIUM"
+                }
+              ],
+              "readOnly": false,
+              "removed": true
+            },
+            {
+              "id": "Risk Signals",
+              "displayName": "Risk Signals",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": true
+            },
+            {
+              "id": "AI Reasoning",
+              "displayName": "AI Reasoning",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": true
+            },
+            {
+              "id": "Booking Status",
+              "displayName": "Booking Status",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "options",
+              "options": [
+                {
+                  "name": "PENDING_REVIEW",
+                  "value": "PENDING_REVIEW"
+                },
+                {
+                  "name": "ACCEPTED",
+                  "value": "ACCEPTED"
+                },
+                {
+                  "name": "DECLINED",
+                  "value": "DECLINED"
+                },
+                {
+                  "name": "EXPIRED",
+                  "value": "EXPIRED"
+                }
+              ],
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Submission Time",
+              "displayName": "Submission Time",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": true,
+              "removed": true
+            },
+            {
+              "id": "Review Deadline",
+              "displayName": "Review Deadline",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": true,
+              "removed": true
+            },
+            {
+              "id": "Is Expired?",
+              "displayName": "Is Expired?",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": true,
+              "removed": true
+            },
+            {
+              "id": "Property",
+              "displayName": "Property",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "array",
+              "readOnly": false,
+              "removed": true
+            },
+            {
+              "id": "Owner Escalations",
+              "displayName": "Owner Escalations",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "array",
+              "readOnly": false,
+              "removed": true
+            },
+            {
+              "id": "System Logs",
+              "displayName": "System Logs",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "array",
+              "readOnly": false,
+              "removed": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {
+          "typecast": true
+        }
+      },
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2.2,
+      "position": [
+        1696,
+        32
+      ],
+      "id": "74251405-3862-4805-9187-91c017b5393e",
+      "name": "Update record1",
+      "credentials": {
+        "airtableTokenApi": {
+          "id": "yR2piwWrdohV4ZiA",
+          "name": "Airtable Personal Access Token account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $json.fields[\"Guest Email\"] }}",
+        "subject": "=BOOKING CONFIRMATION FOR {{ $json.fields[\"Guest Name\"] }}!",
+        "message": "=<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"utf-8\">\n  <style>\n    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #f4f4f7; color: #333333; margin: 0; padding: 20px; }\n    .container { max-width: 600px; background: #ffffff; border-radius: 8px; margin: 0 auto; padding: 30px; box-shadow: 0 4px 10px rgba(0,0,0,0.05); }\n    .header { text-align: center; border-bottom: 2px solid #eaeaef; padding-bottom: 20px; }\n    .status-badge { display: inline-block; background-color: #e6f4ea; color: #137333; font-weight: bold; padding: 6px 12px; border-radius: 20px; font-size: 14px; margin-top: 10px; }\n    .details-box { background-color: #f8f9fa; border-left: 4px solid #10b981; border-radius: 4px; padding: 15px 20px; margin: 25px 0; }\n    .details-row { display: flex; justify-space-between; margin-bottom: 10px; font-size: 15px; }\n    .details-label { font-weight: 600; color: #555555; }\n    .footer { text-align: center; font-size: 13px; color: #777777; margin-top: 30px; border-top: 1px solid #eaeaef; padding-top: 20px; }\n  </style>\n</head>\n<body>\n  <div class=\"container\">\n    <div class=\"header\">\n      <h2 style=\"margin: 0; color: #111827;\">Booking Confirmed! 🏠</h2>\n      <span class=\"status-badge\">AUTO-APPROVED</span>\n    </div>\n    \n    <p>Hi <strong>{{ $json.fields['Guest Name'] }}</strong>,</p>\n    <p>Great news! Your booking request for <strong>{{ $('3. Read Property Constraints').item.json['Property Name'] }}</strong> has been automatically approved and confirmed.</p>\n    \n    <div class=\"details-box\">\n      <h3 style=\"margin-top: 0; color: #111827; font-size: 16px;\">Reservation Details</h3>\n      <div class=\"details-row\">\n        <span class=\"details-label\">Booking Reference:</span>\n        <span>{{ $json.fields['Booking ID'] }}</span>\n      </div>\n      <div class=\"details-row\">\n        <span class=\"details-label\">Check-in:</span>\n        <span>{{ $json.fields['Check-in'] }}</span>\n      </div>\n      <div class=\"details-row\">\n        <span class=\"details-label\">Check-out:</span>\n        <span>{{ $json.fields['Check-out'] }}</span>\n      </div>\n      <div class=\"details-row\" style=\"margin-bottom: 0;\">\n        <span class=\"details-label\">Guests:</span>\n        <span>{{ $json.fields['Guest Count'] }}</span>\n      </div>\n    </div>\n\n    <p>We’re excited to host you! Closer to your check-in date, we’ll send over detailed arrival instructions and keyless entry details.</p>\n    <p>If you have any questions or need to modify your stay, feel free to reply directly to this email.</p>\n    \n    <div class=\"footer\">\n      <p style=\"margin: 0;\">Best regards,</p>\n      <p style=\"margin: 5px 0 0 0; font-weight: 600;\">Short-Term Rental Operations Team</p>\n    </div>\n  </div>\n</body>\n</html>",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        800,
+        -160
+      ],
+      "id": "92318975-4274-4665-bc78-e63815bfd21a",
+      "name": "Send a message",
+      "webhookId": "b8b08272-3c5d-4b3b-a8e8-5eff4253ab1e",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "Pavy6134Zkql7HEh",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $json.fields[\"Guest Email\"] }}",
+        "subject": "=BOOKING CONFIRMATION FOR  {{ $('3. Read Property Constraints').item.json[\"Property Name\"] }}",
+        "message": "=<!DOCTYPE html> <html> <head>   <meta charset=\"utf-8\">   <style>     body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #f4f4f7; color: #333333; margin: 0; padding: 20px; }     .container { max-width: 600px; background: #ffffff; border-radius: 8px; margin: 0 auto; padding: 30px; box-shadow: 0 4px 10px rgba(0,0,0,0.05); }     .header { text-align: center; border-bottom: 2px solid #eaeaef; padding-bottom: 20px; }     .status-badge { display: inline-block; background-color: #e8f0fe; color: #1a73e8; font-weight: bold; padding: 6px 12px; border-radius: 20px; font-size: 14px; margin-top: 10px; }     .details-box { background-color: #f8f9fa; border-left: 4px solid #2563eb; border-radius: 4px; padding: 15px 20px; margin: 25px 0; }     .details-row { display: flex; justify-space-between; margin-bottom: 10px; font-size: 15px; }     .details-label { font-weight: 600; color: #555555; }     .footer { text-align: center; font-size: 13px; color: #777777; margin-top: 30px; border-top: 1px solid #eaeaef; padding-top: 20px; }   </style> </head> <body>   <div class=\"container\">     <div class=\"header\">       <h2 style=\"margin: 0; color: #111827;\">Your Request Was Approved! 🎉</h2>       <span class=\"status-badge\">ACCEPTED BY HOST</span>     </div>          <p>Hi <strong>{{ $json.fields['Guest Name'] }}</strong>,</p>     <p>The property host has officially reviewed and accepted your booking request for <strong>{{ $('3. Read Property Constraints').item.json['Property Name'] }}</strong>!</p>          <div class=\"details-box\">       <h3 style=\"margin-top: 0; color: #111827; font-size: 16px;\">Reservation Details</h3>       <div class=\"details-row\">         <span class=\"details-label\">Booking Reference:</span>         <span>{{ $json.fields['Booking ID'] }}</span>       </div>       <div class=\"details-row\">         <span class=\"details-label\">Check-in: </span>        <span> {{ $json.fields['Check-in'] }}</span>       </div>       <div class=\"details-row\">         <span class=\"details-label\">Check-out:</span>         <span>{{ $json.fields['Check-out'] }}</span>       </div>       <div class=\"details-row\" style=\"margin-bottom: 0;\">         <span class=\"details-label\">Guests:</span>         <span>{{ $json.fields['Guest Email'] }}</span>       </div>     </div>      <p>Your reservation is now fully secured. We will reach out prior to <strong>{{ $json.fields['Check-in'] }}</strong> with full check-in details and entry instructions.</p>     <p>Thank you for choosing to stay with us!</p>          <div class=\"footer\">       <p style=\"margin: 0;\">Warmly,</p>       <p style=\"margin: 5px 0 0 0; font-weight: 600;\">Property Operations & Management Team</p>     </div>   </div> </body> </html>",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        1920,
+        -160
+      ],
+      "id": "00a483d6-0b35-4e52-8361-b9842c8858ac",
+      "name": "Send a message1",
+      "webhookId": "b8b08272-3c5d-4b3b-a8e8-5eff4253ab1e",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "Pavy6134Zkql7HEh",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "51a278b3-7847-427c-bdca-40a7b2d9dce4",
+              "leftValue": "={{ $json.data?.approved !== undefined }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        1024,
+        32
+      ],
+      "id": "a294be8f-6bcb-439d-b96d-c64421094010",
+      "name": "If1"
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $json.fields[\"Guest Email\"] }}",
+        "subject": "BOOKING REQUEST REVIEW",
+        "message": "=<!DOCTYPE html> <html> <head>   <meta charset=\"utf-8\">   <style>     body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #f4f4f7; color: #333333; margin: 0; padding: 20px; }     .container { max-width: 600px; background: #ffffff; border-radius: 8px; margin: 0 auto; padding: 30px; box-shadow: 0 4px 10px rgba(0,0,0,0.05); }     .header { text-align: center; border-bottom: 2px solid #eaeaef; padding-bottom: 20px; }     .status-badge { display: inline-block; background-color: #fde8e8; color: #9b1c1c; font-weight: bold; padding: 6px 12px; border-radius: 20px; font-size: 14px; margin-top: 10px; }     .details-box { background-color: #f8f9fa; border-left: 4px solid #e02424; border-radius: 4px; padding: 15px 20px; margin: 25px 0; }     .details-row { display: flex; justify-content: space-between; margin-bottom: 10px; font-size: 15px; }     .details-label {padding-right: 5px; font-weight: 600; color: #555555; }     .footer { text-align: center; font-size: 13px; color: #777777; margin-top: 30px; border-top: 1px solid #eaeaef; padding-top: 20px; }   </style> </head> <body>   <div class=\"container\">     <div class=\"header\">       <h2 style=\"margin: 0; color: #111827;\">Update on Your Booking Request</h2>       <span class=\"status-badge\">REQUEST DECLINED</span>     </div>          <p>Hi <strong>{{ $json.fields['Guest Name'] }}</strong>,</p>     <p>Thank you for your interest in staying at <strong>{{ $('3. Read Property Constraints').item.json['Property Name'] }}</strong>.</p>     <p>Unfortunately, the property host is unable to accommodate your reservation request for the requested dates at this time.</p>          <div class=\"details-box\">       <h3 style=\"margin-top: 0; color: #111827; font-size: 16px;\">Requested Reservation Details</h3>       <div class=\"details-row\">         <span class=\"details-label\">Booking Reference:</span>         <span>{{ $json.fields['Booking ID'] }}</span>       </div>       <div class=\"details-row\">         <span class=\"details-label\">Check-in:</span>         <span>{{ $json.fields['Check-in'] }}</span>       </div>       <div class=\"details-row\">         <span class=\"details-label\">Check-out:</span>         <span>{{ $json.fields['Check-out'] }}</span>       </div>       <div class=\"details-row\" style=\"margin-bottom: 0;\">         <span class=\"details-label\">Guests:</span>         <span>{{ $json.fields['Guest Count'] }}</span>       </div>     </div>      <p style=\"background-color: #f3f4f6; padding: 12px; border-radius: 6px; font-size: 14px; color: #4b5563;\">       💳 <strong>Payment Status:</strong> No charges were made to your account, and any temporary hold on your card will be released automatically.     </p>      <p>We apologize for any inconvenience this may cause. We encourage you to explore other available dates or check our other listed properties for your stay.</p>          <div class=\"footer\">       <p style=\"margin: 0;\">Best regards,</p>       <p style=\"margin: 5px 0 0 0; font-weight: 600;\">Short-Term Rental Management Team</p>     </div>   </div> </body> </html>",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        1920,
+        32
+      ],
+      "id": "4129ac27-07f0-4c9b-aad6-f3503abed40d",
+      "name": "Send a message2",
+      "webhookId": "ae2a0073-7647-4664-a33c-aba41571b0f7",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "Pavy6134Zkql7HEh",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $json.fields[\"Guest Email\"] }}",
+        "subject": "BOOKING REQUEST REVIEW",
+        "message": "=<!DOCTYPE html> <html> <head>   <meta charset=\"utf-8\">   <style>     body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #f4f4f7; color: #333333; margin: 0; padding: 20px; }     .container { max-width: 600px; background: #ffffff; border-radius: 8px; margin: 0 auto; padding: 30px; box-shadow: 0 4px 10px rgba(0,0,0,0.05); }     .header { text-align: center; border-bottom: 2px solid #eaeaef; padding-bottom: 20px; }     .status-badge { display: inline-block; background-color: #feecdc; color: #b45309; font-weight: bold; padding: 6px 12px; border-radius: 20px; font-size: 14px; margin-top: 10px; }     .details-box { background-color: #f8f9fa; border-left: 4px solid #f59e0b; border-radius: 4px; padding: 15px 20px; margin: 25px 0; }     .details-row { display: flex; justify-content: space-between; margin-bottom: 10px; font-size: 15px; }     .details-label {padding-right: 5px; font-weight: 600; color: #555555; }     .footer { text-align: center; font-size: 13px; color: #777777; margin-top: 30px; border-top: 1px solid #eaeaef; padding-top: 20px; }   </style> </head> <body>   <div class=\"container\">     <div class=\"header\">       <h2 style=\"margin: 0; color: #111827;\">Booking Request Expired ⌛</h2>       <span class=\"status-badge\">REQUEST TIMED OUT</span>     </div>          <p>Hi <strong>{{ $json.fields['Guest Name'] }}</strong>,</p>     <p>Your booking request for <strong>{{ $('3. Read Property Constraints').item.json['Property Name'] }}</strong> has expired because the property host was unable to review and confirm the reservation within our required response window.</p>          <div class=\"details-box\">       <h3 style=\"margin-top: 0; color: #111827; font-size: 16px;\">Expired Request Details</h3>       <div class=\"details-row\">         <span class=\"details-label\">Booking Reference:</span>         <span>{{ $json.fields['Booking ID'] }}</span>       </div>       <div class=\"details-row\">         <span class=\"details-label\">Check-in:</span>         <span>{{ $json.fields['Check-in'] }}</span>       </div>       <div class=\"details-row\">         <span class=\"details-label\">Check-out:</span>         <span>{{ $json.fields['Check-out'] }}</span>       </div>       <div class=\"details-row\" style=\"margin-bottom: 0;\">         <span class=\"details-label\">Guests:</span>         <span>{{ $json.fields['Guest Count'] }}</span>       </div>     </div>      <p style=\"background-color: #f3f4f6; padding: 12px; border-radius: 6px; font-size: 14px; color: #4b5563;\">       💳 <strong>Payment Status:</strong> No charges were applied to your payment method. Any pending pre-authorization hold will be automatically released by your bank.     </p>      <p>We apologize for the delay. You are welcome to submit a new reservation request or explore alternate dates and listings on our platform.</p>          <div class=\"footer\">       <p style=\"margin: 0;\">Best regards,</p>       <p style=\"margin: 5px 0 0 0; font-weight: 600;\">Short-Term Rental Management Team</p>     </div>   </div> </body> </html>",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        1392,
+        272
+      ],
+      "id": "554adb59-1d3a-41a3-8f75-7c328dd2c946",
+      "name": "Send a message3",
+      "webhookId": "a90ef396-7c91-43c7-8e47-7c1dff39c3db",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "Pavy6134Zkql7HEh",
+          "name": "Gmail account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "1. Webhook (POST /booking-request)": {
+      "main": [
+        [
+          {
+            "node": "2. Payload Schema Validation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "2. Payload Schema Validation": {
+      "main": [
+        [
+          {
+            "node": "3. Read Property Constraints",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "3. Read Property Constraints": {
+      "main": [
+        [
+          {
+            "node": "4. Deterministic Hard Rules",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "4. Deterministic Hard Rules": {
+      "main": [
+        [
+          {
+            "node": "Switch",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Switch": {
+      "main": [
+        [
+          {
+            "node": "Create a record1",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Create a record",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send message and wait for response": {
+      "main": [
+        [
+          {
+            "node": "If1",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "Create a record": {
+      "main": [
+        [
+          {
+            "node": "Send message and wait for response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create or update a record": {
+      "main": [
+        [
+          {
+            "node": "Update record",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If": {
+      "main": [
+        [
+          {
+            "node": "Create or update a record",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Create or update a record1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create or update a record1": {
+      "main": [
+        [
+          {
+            "node": "Update record1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update record": {
+      "main": [
+        [
+          {
+            "node": "Send a message1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update record1": {
+      "main": [
+        [
+          {
+            "node": "Send a message2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create a record1": {
+      "main": [
+        [
+          {
+            "node": "Send a message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If1": {
+      "main": [
+        [
+          {
+            "node": "If",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "WF-4: Set Status EXPIRED",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "WF-4: Set Status EXPIRED": {
+      "main": [
+        [
+          {
+            "node": "Send a message3",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "timeSavedMode": "fixed",
+    "errorWorkflow": "n7TMDgLqU0x8UiAl",
+    "timezone": "Africa/Lagos",
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": false
+  },
+  "versionId": "ba92c9cc-0973-4aae-9661-9d65eecfb516",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "1de021c500a569c3d14d073e917737d9e9c20aef616e57ba1a93f6ed4235d263"
+  },
+  "nodeGroups": [],
+  "id": "uxlu9xzkuleiNdbG",
+  "tags": []
+}

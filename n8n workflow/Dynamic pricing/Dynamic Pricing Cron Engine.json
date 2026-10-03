@@ -1,0 +1,618 @@
+{
+  "name": "Dynamic Pricing Cron Engine",
+  "nodes": [
+    {
+      "parameters": {
+        "operation": "search",
+        "base": {
+          "__rl": true,
+          "value": "apppjeUadHRQGGv7O",
+          "mode": "id"
+        },
+        "table": {
+          "__rl": true,
+          "value": "tblcyXwv9oaVWci57",
+          "mode": "id"
+        },
+        "options": {}
+      },
+      "id": "32bc2b5a-0fdc-4283-8cfa-283a5768378a",
+      "name": "Fetch Properties Data",
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2,
+      "position": [
+        -448,
+        112
+      ],
+      "credentials": {
+        "airtableTokenApi": {
+          "id": "yR2piwWrdohV4ZiA",
+          "name": "Airtable Personal Access Token account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// =========================================================================\n// WF-1: RECONCILED ADDITIVE DYNAMIC PRICING ENGINE\n// =========================================================================\n\nconst item = $input.item.json;\nconst fields = $json || {};\n\n// 1. Core Property Base Rates & Limits$json['Base Nightly Price']\nconst basePrice = Number(fields['Base Nightly Price']) || 100000;\nconst minPrice = Number(fields[\"Min Price\"]) || 70000;\nconst maxPrice = Number(fields[\"Max Price\"]) || 150000;\n\n// 2. Extract Linked Competitor Market Rates (Table 4)\nconst competitorRates = fields['Observed nightly rate'] || []; \nlet deltaCompetitor = 0.00;\n\nif (competitorRates.length > 0) {\n  const compAvg = competitorRates.reduce((sum, rate) => sum + Number(rate), 0) / competitorRates.length;\n  if (compAvg > basePrice) {\n    deltaCompetitor = 0.10; // +10% boost if competitor avg higher than base\n  }\n}\n\n// 3. Extract Local Event Impact Signals (Table 5)\nconst eventImpactLevel = (fields[\"Impact Level\"] || \"NONE\");\nlet mEvent = 0.00;\n\nif (eventImpactLevel === \"HIGH\") {\n  mEvent = 0.25;\n} else if (eventImpactLevel === \"MEDIUM\") {\n  mEvent = 0.10;\n}\n\n// 4. Weekend Multiplier Check (Fri/Sat)\nconst today = new Date();\nconst dayOfWeek = today.getDay(); // 0 = Sun, 5 = Fri, 6 = Sat\nconst isWeekend = (dayOfWeek === 5 || dayOfWeek === 6);\nconst mWeekend = isWeekend ? 0.15 : 0.00;\n\n// 5. Reconciled Additive Factor Calculation\n// Recommended Price = Base Price * (1 + Δ Competitor + M Event + M Weekend)\nconst rawMultiplier = 1 + deltaCompetitor + mEvent + mWeekend;\nconst calculatedPrice = Math.round(basePrice * rawMultiplier);\n\n// 6. Calculate Consolidated Demand Level Label\nlet demandLevel = \"LOW\";\nconst totalDemandFactor = mEvent + mWeekend;\n\nif (totalDemandFactor >= 0.25) {\n  demandLevel = \"HIGH\";\n} else if (totalDemandFactor > 0) {\n  demandLevel = \"MEDIUM\";\n}\n\n// 7. Enforce Safety Floor & Ceiling Boundaries\nconst finalRecommendedPrice = Math.min(Math.max(calculatedPrice, minPrice), maxPrice);\n\n// 8. Structure Output Object\nreturn {\n  json: {\n    property_record_id: item.id,\n    property_id: fields[\"Property ID\"],\n    base_price: basePrice,\n    min_price: minPrice,\n    max_price: maxPrice,\n    calculated_price: calculatedPrice,\n    final_recommended_price: finalRecommendedPrice,\n    demand_level: demandLevel,\n    is_weekend: isWeekend ? \"YES\" : \"NO\",\n    event_impact: eventImpactLevel,\n    delta_competitor: deltaCompetitor,\n    evaluated_at: new Date().toISOString()\n  }\n};"
+      },
+      "id": "9ecba50a-46cf-44f4-8de7-5ae2640c08b3",
+      "name": "JS Pricing Calculation Engine",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -224,
+        112
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "base": {
+          "__rl": true,
+          "value": "apppjeUadHRQGGv7O",
+          "mode": "id"
+        },
+        "table": {
+          "__rl": true,
+          "value": "tblcyXwv9oaVWci57",
+          "mode": "list",
+          "cachedResultName": "Properties",
+          "cachedResultUrl": "https://airtable.com/apppjeUadHRQGGv7O/tblcyXwv9oaVWci57"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Current Price": "={{ $json.final_recommended_price }}",
+            "id": "={{ $json.property_record_id }}"
+          },
+          "matchingColumns": [
+            "id"
+          ],
+          "schema": [
+            {
+              "id": "id",
+              "displayName": "id",
+              "required": false,
+              "defaultMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": true,
+              "removed": false
+            },
+            {
+              "id": "Property ID",
+              "displayName": "Property ID",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": true
+            },
+            {
+              "id": "Property Name",
+              "displayName": "Property Name",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": true
+            },
+            {
+              "id": "Location",
+              "displayName": "Location",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": true
+            },
+            {
+              "id": "Capacity",
+              "displayName": "Capacity",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "number",
+              "readOnly": false,
+              "removed": true
+            },
+            {
+              "id": "Base Nightly Price",
+              "displayName": "Base Nightly Price",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "number",
+              "readOnly": false,
+              "removed": true
+            },
+            {
+              "id": "Min Price",
+              "displayName": "Min Price",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "number",
+              "readOnly": false,
+              "removed": true
+            },
+            {
+              "id": "Max Price",
+              "displayName": "Max Price",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "number",
+              "readOnly": false,
+              "removed": true
+            },
+            {
+              "id": "Current Price",
+              "displayName": "Current Price",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "number",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "House Rules",
+              "displayName": "House Rules",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": true
+            },
+            {
+              "id": "Active/Inactive",
+              "displayName": "Active/Inactive",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "options",
+              "options": [
+                {
+                  "name": "Active",
+                  "value": "Active"
+                },
+                {
+                  "name": "Inactive",
+                  "value": "Inactive"
+                }
+              ],
+              "readOnly": false,
+              "removed": true
+            },
+            {
+              "id": "Notes",
+              "displayName": "Notes",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": true
+            },
+            {
+              "id": "Date Added",
+              "displayName": "Date Added",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": true,
+              "removed": true
+            },
+            {
+              "id": "Last Price Change",
+              "displayName": "Last Price Change",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": true,
+              "removed": true
+            },
+            {
+              "id": "Bookings",
+              "displayName": "Bookings",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "array",
+              "readOnly": false,
+              "removed": true
+            },
+            {
+              "id": "Pricing Records",
+              "displayName": "Pricing Records",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "array",
+              "readOnly": false,
+              "removed": true
+            },
+            {
+              "id": "Competitor Market Feeds",
+              "displayName": "Competitor Market Feeds",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "array",
+              "readOnly": false,
+              "removed": true
+            },
+            {
+              "id": "Local Events",
+              "displayName": "Local Events",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": true
+            },
+            {
+              "id": "Competitor market url",
+              "displayName": "Competitor market url",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": true
+            },
+            {
+              "id": "Observed nightly rate",
+              "displayName": "Observed nightly rate",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": true,
+              "removed": true
+            },
+            {
+              "id": "Summary (Competitor market url)",
+              "displayName": "Summary (Competitor market url)",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": true
+            },
+            {
+              "id": "Title (Competitor market url)",
+              "displayName": "Title (Competitor market url)",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": true
+            },
+            {
+              "id": "Local Events 2",
+              "displayName": "Local Events 2",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "array",
+              "readOnly": false,
+              "removed": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "id": "2053ae51-fab8-4b8b-bc2e-33ac83073778",
+      "name": "Update Current Price (Properties Table)",
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ],
+      "credentials": {
+        "airtableTokenApi": {
+          "id": "yR2piwWrdohV4ZiA",
+          "name": "Airtable Personal Access Token account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "create",
+        "base": {
+          "__rl": true,
+          "value": "apppjeUadHRQGGv7O",
+          "mode": "id"
+        },
+        "table": {
+          "__rl": true,
+          "value": "tbl1iLW5Aeq97SbG5",
+          "mode": "id"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Property": "={{ [$json.property_record_id] }}",
+            "Recommended Price": "={{ $json.final_recommended_price }}",
+            "Is Weekend": "={{ $json.is_weekend }}",
+            "Event Impact": "={{ $json.event_impact }}",
+            "Demand Level": "={{ $json.demand_level }}",
+            "Applied Price": "={{ $json.final_recommended_price }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "Pricing ID",
+              "displayName": "Pricing ID",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": true,
+              "removed": true
+            },
+            {
+              "id": "Competitor Average",
+              "displayName": "Competitor Average",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "number",
+              "readOnly": false,
+              "removed": true
+            },
+            {
+              "id": "Event Impact",
+              "displayName": "Event Impact",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "options",
+              "options": [
+                {
+                  "name": "HIGH",
+                  "value": "HIGH"
+                },
+                {
+                  "name": "MEDIUM",
+                  "value": "MEDIUM"
+                },
+                {
+                  "name": "NONE",
+                  "value": "NONE"
+                }
+              ],
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Demand Level",
+              "displayName": "Demand Level",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "options",
+              "options": [
+                {
+                  "name": "HIGH",
+                  "value": "HIGH"
+                },
+                {
+                  "name": "MEDIUM",
+                  "value": "MEDIUM"
+                },
+                {
+                  "name": "LOW",
+                  "value": "LOW"
+                }
+              ],
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Is Weekend",
+              "displayName": "Is Weekend",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "options",
+              "options": [
+                {
+                  "name": "YES",
+                  "value": "YES"
+                },
+                {
+                  "name": "NO",
+                  "value": "NO"
+                }
+              ],
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Recommended Price",
+              "displayName": "Recommended Price",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "number",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Applied Price",
+              "displayName": "Applied Price",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "number",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Evaluated At",
+              "displayName": "Evaluated At",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": true,
+              "removed": true
+            },
+            {
+              "id": "Property",
+              "displayName": "Property",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "array",
+              "readOnly": false,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "id": "e8724874-69d1-43df-80fc-349fb8f9a1af",
+      "name": "Write Log Record (Pricing Records Table)",
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2,
+      "position": [
+        0,
+        208
+      ],
+      "credentials": {
+        "airtableTokenApi": {
+          "id": "yR2piwWrdohV4ZiA",
+          "name": "Airtable Personal Access Token account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "hours",
+              "hoursInterval": 24
+            }
+          ]
+        }
+      },
+      "id": "b0e816b8-ce71-4bfd-b68f-b856a8d0bdce",
+      "name": "Schedule Trigger (24h Cron)",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -656,
+        112
+      ]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Fetch Properties Data": {
+      "main": [
+        [
+          {
+            "node": "JS Pricing Calculation Engine",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "JS Pricing Calculation Engine": {
+      "main": [
+        [
+          {
+            "node": "Update Current Price (Properties Table)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Write Log Record (Pricing Records Table)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Schedule Trigger (24h Cron)": {
+      "main": [
+        [
+          {
+            "node": "Fetch Properties Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "timeSavedMode": "fixed",
+    "errorWorkflow": "n7TMDgLqU0x8UiAl",
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": false
+  },
+  "versionId": "77927547-87e0-4db8-b4ae-9b9c71b79de4",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "1de021c500a569c3d14d073e917737d9e9c20aef616e57ba1a93f6ed4235d263"
+  },
+  "nodeGroups": [],
+  "id": "eMowjL6KlyWeZh1T",
+  "tags": []
+}

@@ -1,0 +1,190 @@
+{
+  "name": "WF-2: Dynamic Pricing Cron Engine",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "hours",
+              "hoursInterval": 6
+            }
+          ]
+        }
+      },
+      "id": "10000000-0000-0000-0000-000000000001",
+      "name": "Schedule Trigger (6h Cron)",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        200,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "search",
+        "base": {
+          "__rl": true,
+          "value": "YOUR_AIRTABLE_BASE_ID",
+          "mode": "id"
+        },
+        "table": {
+          "__rl": true,
+          "value": "Properties",
+          "mode": "name"
+        },
+        "options": {}
+      },
+      "id": "10000000-0000-0000-0000-000000000002",
+      "name": "Fetch Properties Data",
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2,
+      "position": [
+        420,
+        300
+      ],
+      "credentials": {
+        "airtableTokenApi": {
+          "id": "YOUR_AIRTABLE_CREDENTIAL_ID",
+          "name": "Airtable Personal Access Token"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// =========================================================================\n// WF-1: RECONCILED ADDITIVE DYNAMIC PRICING ENGINE\n// =========================================================================\n\nconst item = $input.item.json;\nconst fields = item.fields || {};\n\n// 1. Core Property Base Rates & Limits\nconst basePrice = Number(fields[\"Base Nightly Price\"]) || 100000;\nconst minPrice = Number(fields[\"Min Price\"]) || 70000;\nconst maxPrice = Number(fields[\"Max Price\"]) || 150000;\n\n// 2. Extract Linked Competitor Market Rates (Table 4)\nconst competitorRates = fields[\"Competitor Observed Rates\"] || []; \nlet deltaCompetitor = 0.00;\n\nif (competitorRates.length > 0) {\n  const compAvg = competitorRates.reduce((sum, rate) => sum + Number(rate), 0) / competitorRates.length;\n  if (compAvg > basePrice) {\n    deltaCompetitor = 0.10; // +10% boost if competitor avg higher than base\n  }\n}\n\n// 3. Extract Local Event Impact Signals (Table 5)\nconst eventImpactLevel = (fields[\"Highest Active Event Impact\"] || \"NONE\").toUpperCase();\nlet mEvent = 0.00;\n\nif (eventImpactLevel === \"HIGH\") {\n  mEvent = 0.25;\n} else if (eventImpactLevel === \"MEDIUM\") {\n  mEvent = 0.10;\n}\n\n// 4. Weekend Multiplier Check (Fri/Sat)\nconst today = new Date();\nconst dayOfWeek = today.getDay(); // 0 = Sun, 5 = Fri, 6 = Sat\nconst isWeekend = (dayOfWeek === 5 || dayOfWeek === 6);\nconst mWeekend = isWeekend ? 0.15 : 0.00;\n\n// 5. Reconciled Additive Factor Calculation\n// Recommended Price = Base Price * (1 + Δ Competitor + M Event + M Weekend)\nconst rawMultiplier = 1 + deltaCompetitor + mEvent + mWeekend;\nconst calculatedPrice = Math.round(basePrice * rawMultiplier);\n\n// 6. Enforce Safety Floor & Ceiling Boundaries\nconst finalRecommendedPrice = Math.min(Math.max(calculatedPrice, minPrice), maxPrice);\n\n// 7. Structure Output Object\nreturn {\n  json: {\n    property_record_id: item.id,\n    property_id: fields[\"Property ID\"] || \"PROP-001\",\n    base_price: basePrice,\n    min_price: minPrice,\n    max_price: maxPrice,\n    calculated_price: calculatedPrice,\n    final_recommended_price: finalRecommendedPrice,\n    is_weekend: isWeekend ? \"YES\" : \"NO\",\n    event_impact: eventImpactLevel,\n    delta_competitor: deltaCompetitor,\n    evaluated_at: new Date().toISOString()\n  }\n};"
+      },
+      "id": "10000000-0000-0000-0000-000000000003",
+      "name": "JS Pricing Calculation Engine",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        640,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "base": {
+          "__rl": true,
+          "value": "YOUR_AIRTABLE_BASE_ID",
+          "mode": "id"
+        },
+        "table": {
+          "__rl": true,
+          "value": "Properties",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "id": "={{ $json.property_record_id }}",
+            "Current Price": "={{ $json.final_recommended_price }}"
+          }
+        },
+        "options": {}
+      },
+      "id": "10000000-0000-0000-0000-000000000004",
+      "name": "Update Current Price (Properties Table)",
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2,
+      "position": [
+        860,
+        200
+      ],
+      "credentials": {
+        "airtableTokenApi": {
+          "id": "YOUR_AIRTABLE_CREDENTIAL_ID",
+          "name": "Airtable Personal Access Token"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "create",
+        "base": {
+          "__rl": true,
+          "value": "YOUR_AIRTABLE_BASE_ID",
+          "mode": "id"
+        },
+        "table": {
+          "__rl": true,
+          "value": "Pricing Records",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Property": "=[ \"{{ $json.property_record_id }}\" ]",
+            "Recommended Price": "={{ $json.final_recommended_price }}",
+            "Applied Price": "={{ $json.final_recommended_price }}",
+            "Event Impact": "={{ $json.event_impact }}",
+            "Is Weekend": "={{ $json.is_weekend }}",
+            "Evaluated At": "={{ $json.evaluated_at }}"
+          }
+        },
+        "options": {}
+      },
+      "id": "10000000-0000-0000-0000-000000000005",
+      "name": "Write Log Record (Pricing Records Table)",
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2,
+      "position": [
+        860,
+        400
+      ],
+      "credentials": {
+        "airtableTokenApi": {
+          "id": "YOUR_AIRTABLE_CREDENTIAL_ID",
+          "name": "Airtable Personal Access Token"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Schedule Trigger (6h Cron)": {
+      "main": [
+        [
+          {
+            "node": "Fetch Properties Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Properties Data": {
+      "main": [
+        [
+          {
+            "node": "JS Pricing Calculation Engine",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "JS Pricing Calculation Engine": {
+      "main": [
+        [
+          {
+            "node": "Update Current Price (Properties Table)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Write Log Record (Pricing Records Table)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

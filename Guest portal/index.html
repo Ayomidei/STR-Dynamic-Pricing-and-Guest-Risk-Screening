@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PrimeStays | Dynamic Guest Booking Portal</title>
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-50 text-gray-800 antialiased min-h-screen flex flex-col">
+
+  <!-- Header -->
+  <header class="bg-white border-b sticky top-0 z-40 shadow-sm">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex justify-between items-center">
+      <div class="flex items-center space-x-2">
+        <span class="text-2xl font-black text-indigo-600 tracking-tight">PrimeStays</span>
+      </div>
+      <div class="flex items-center space-x-2">
+        <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-emerald-100 text-emerald-800">
+          <span class="w-2 h-2 mr-1.5 bg-emerald-500 rounded-full animate-pulse"></span> Dynamic Pricing Active
+        </span>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Content -->
+  <main class="flex-grow max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 w-full">
+    <!-- Hero Header -->
+    <div class="text-center max-w-2xl mx-auto mb-10">
+      <h1 class="text-3xl font-extrabold text-gray-900 sm:text-4xl tracking-tight">
+        Premium Short-Term Rentals
+      </h1>
+      <p class="mt-3 text-base text-gray-500 sm:text-lg">
+        Explore available luxury properties with live demand-adjusted rates and instant booking availability.
+      </p>
+    </div>
+
+    <!-- Dynamic Property Cards Grid -->
+    <div id="property-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+      <!-- Injected via app.js -->
+    </div>
+  </main>
+
+  <!-- Modal Backdrop & Dialog -->
+  <div id="booking-modal" class="fixed inset-0 bg-gray-900/60 backdrop-blur-sm z-50 flex items-center justify-center hidden p-4 overflow-y-auto">
+    <div class="bg-white rounded-2xl shadow-2xl max-w-lg w-full overflow-hidden transition-all transform">
+      
+      <!-- Modal Header -->
+      <div class="bg-indigo-600 px-6 py-4 flex justify-between items-center text-white">
+        <div>
+          <h3 id="modal-property-title" class="text-lg font-bold">Book Property</h3>
+          <p id="modal-property-sub" class="text-xs text-indigo-100"></p>
+        </div>
+        <button id="close-modal-btn" type="button" class="text-indigo-200 hover:text-white text-2xl font-bold leading-none">&times;</button>
+      </div>
+
+      <!-- Booking Form -->
+      <form id="booking-form" class="p-6 space-y-4">
+        <input type="hidden" id="form-property-id">
+
+        <div>
+          <label for="form-guest-name" class="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-1">Full Name</label>
+          <input type="text" id="form-guest-name" required placeholder="e.g. Jane Doe"
+                 class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition">
+        </div>
+
+        <div>
+          <label for="form-guest-email" class="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-1">Email Address</label>
+          <input type="email" id="form-guest-email" required placeholder="jane@example.com"
+                 class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition">
+        </div>
+
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div>
+            <label for="form-checkin" class="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-1">Check-In</label>
+            <input type="date" id="form-checkin" required
+                   class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition">
+          </div>
+          <div>
+            <label for="form-checkout" class="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-1">Check-Out</label>
+            <input type="date" id="form-checkout" required
+                   class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition">
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div>
+            <label for="form-guest-count" class="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-1">Guest Count</label>
+            <input type="number" id="form-guest-count" min="1" required placeholder="1"
+                   class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition">
+          </div>
+          <div>
+            <label for="form-rate-display" class="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-1">Current Nightly Rate</label>
+            <input type="text" id="form-rate-display" readonly
+                   class="w-full px-3 py-2 border border-gray-200 bg-gray-100 text-gray-700 font-bold text-sm rounded-lg cursor-not-allowed">
+          </div>
+        </div>
+
+        <div>
+          <label for="form-purpose" class="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-1">Purpose of Stay / Event Details</label>
+          <textarea id="form-purpose" rows="2" required placeholder="e.g. Business conference stay, weekend getaway, birthday gathering"
+                    class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition"></textarea>
+        </div>
+
+        <!-- Alert Banner Container -->
+        <div id="form-alert" class="hidden p-3 rounded-lg text-sm font-medium"></div>
+
+        <!-- Action Buttons -->
+        <div class="pt-2 flex justify-end space-x-3">
+          <button type="button" id="cancel-modal-btn"
+                  class="px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 transition">
+            Cancel
+          </button>
+          <button type="submit" id="submit-btn"
+                  class="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold rounded-lg shadow-sm transition flex items-center justify-center">
+            <span id="btn-text">Submit Request</span>
+          </button>
+        </div>
+      </form>
+
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

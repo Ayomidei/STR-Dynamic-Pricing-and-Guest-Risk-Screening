@@ -1,0 +1,233 @@
+{
+  "name": "Error Workflow",
+  "nodes": [
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.errorTrigger",
+      "typeVersion": 1,
+      "position": [
+        -256,
+        -16
+      ],
+      "id": "9f240c64-55ca-470d-aa4e-5180befd636c",
+      "name": "Error Trigger"
+    },
+    {
+      "parameters": {
+        "operation": "create",
+        "base": {
+          "__rl": true,
+          "value": "apppjeUadHRQGGv7O",
+          "mode": "list",
+          "cachedResultName": "properties",
+          "cachedResultUrl": "https://airtable.com/apppjeUadHRQGGv7O"
+        },
+        "table": {
+          "__rl": true,
+          "value": "tblWYo5bmb0t5Gptj",
+          "mode": "list",
+          "cachedResultName": "System Logs",
+          "cachedResultUrl": "https://airtable.com/apppjeUadHRQGGv7O/tblWYo5bmb0t5Gptj"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Workflow Name": "={{ $json.workflow.name }}",
+            "Error Payload": "={{ $json.execution.error.message }}",
+            "Failure Mode": "={{ $json.execution.error.stack }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "Log ID",
+              "displayName": "Log ID",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": true,
+              "removed": true
+            },
+            {
+              "id": "Timestamp",
+              "displayName": "Timestamp",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": true,
+              "removed": true
+            },
+            {
+              "id": "Workflow Name",
+              "displayName": "Workflow Name",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Failure Mode",
+              "displayName": "Failure Mode",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Error Payload",
+              "displayName": "Error Payload",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Resolution Action",
+              "displayName": "Resolution Action",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": true
+            },
+            {
+              "id": "Is Resolved?",
+              "displayName": "Is Resolved?",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "options",
+              "options": [
+                {
+                  "name": "YES",
+                  "value": "YES"
+                },
+                {
+                  "name": "NO",
+                  "value": "NO"
+                }
+              ],
+              "readOnly": false,
+              "removed": true
+            },
+            {
+              "id": "Error Severity (AI)",
+              "displayName": "Error Severity (AI)",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": true
+            },
+            {
+              "id": "Related Booking",
+              "displayName": "Related Booking",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "array",
+              "readOnly": false,
+              "removed": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2.2,
+      "position": [
+        -48,
+        -16
+      ],
+      "id": "76d17b4b-cc41-403a-a850-fe6bf0ea7b89",
+      "name": "Create a record",
+      "credentials": {
+        "airtableTokenApi": {
+          "id": "yR2piwWrdohV4ZiA",
+          "name": "Airtable Personal Access Token account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sendTo": "ayomidedaniel200711@gmail.com",
+        "subject": "=ERROR IN  {{ $json.fields[\"Failure Mode\"] }}",
+        "message": "=There is an error here, kindly check the {{ $('Error Trigger').item.json.execution.lastNodeExecuted }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        160,
+        -16
+      ],
+      "id": "e682e285-fd2b-4d5d-a173-6a8a9735b1ae",
+      "name": "Send a message",
+      "webhookId": "fd82266a-ef85-4c2a-8f0d-810ec1ed1b3c",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "Pavy6134Zkql7HEh",
+          "name": "Gmail account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Error Trigger": {
+      "main": [
+        [
+          {
+            "node": "Create a record",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create a record": {
+      "main": [
+        [
+          {
+            "node": "Send a message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "865ad742-485f-4c6c-91f3-aeab4a21a4fb",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "1de021c500a569c3d14d073e917737d9e9c20aef616e57ba1a93f6ed4235d263"
+  },
+  "nodeGroups": [],
+  "id": "n7TMDgLqU0x8UiAl",
+  "tags": []
+}

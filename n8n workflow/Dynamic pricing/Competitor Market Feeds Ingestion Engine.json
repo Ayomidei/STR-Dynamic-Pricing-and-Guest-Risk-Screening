@@ -1,0 +1,735 @@
+{
+  "name": "Competitor Market Feeds Ingestion Engine",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "hours",
+              "hoursInterval": 12
+            }
+          ]
+        }
+      },
+      "id": "a9e58351-fb6a-4f8f-b548-cda118aa3017",
+      "name": "Schedule Trigger (12h Cron)",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -544,
+        160
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "search",
+        "base": {
+          "__rl": true,
+          "value": "apppjeUadHRQGGv7O",
+          "mode": "id"
+        },
+        "table": {
+          "__rl": true,
+          "value": "tblcyXwv9oaVWci57",
+          "mode": "id"
+        },
+        "options": {}
+      },
+      "id": "60f86831-e135-4b05-8251-2c4afeb8aa3e",
+      "name": "Fetch Properties Target URLs",
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2,
+      "position": [
+        -320,
+        16
+      ],
+      "credentials": {
+        "airtableTokenApi": {
+          "id": "yR2piwWrdohV4ZiA",
+          "name": "Airtable Personal Access Token account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.firecrawl.dev/v1/scrape",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"url\": \"{{ $json[\"Competitor market url\"] }}\",\n  \"formats\": [\"extract\"],\n  \"extract\": {\n    \"schema\": {\n      \"type\": \"object\",\n      \"properties\": {\n        \"competitor_name\": { \"type\": \"string\" },\n        \"observed_nightly_rate\": { \"type\": \"number\" },\n        \"currency\": { \"type\": \"string\" },\n        \"is_available\": { \"type\": \"boolean\" }\n      },\n      \"required\": [\"observed_nightly_rate\"]\n    }\n  }\n} ",
+        "options": {}
+      },
+      "id": "fb50d3f0-0bb6-44a9-875a-c377b87de87a",
+      "name": "Firecrawl Scrape Node",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        64,
+        -16
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "26WOlxFsDho4oXVp",
+          "name": "Header Auth account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// Firecrawl Response Parser & Table 4 Payload Formatter\nconst item = $input.item.json;\nconst propertyRecordId = [$('Fetch Properties Target URLs').item.json.id]\n\n// Extract structured schema values from Firecrawl's extract output\nconst extractData = item.data?.extract || item.extract || {};\nconst observedRate = Number(extractData.observed_nightly_rate) || 0;\nconst competitorName = extractData.competitor_name || \"Scraped Competitor Listing\";\n\n// Determine ingestion health status for Table 4\nconst scrapeStatus = (observedRate > 0) ? \"ACTIVE\" : \"FAILED\";\n\nreturn {\n  json: {\n    property_airtable_id: propertyRecordId,\n    competitor_name: competitorName,\n    observed_nightly_rate: observedRate,\n    last_scraped_at: new Date().toISOString(),\n    status: scrapeStatus\n  }\n};"
+      },
+      "id": "9b8349cb-4912-4623-9e0d-4bbb8e07b677",
+      "name": "Parse Firecrawl Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        272,
+        96
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "create",
+        "base": {
+          "__rl": true,
+          "value": "apppjeUadHRQGGv7O",
+          "mode": "id"
+        },
+        "table": {
+          "__rl": true,
+          "value": "tblAGB3QoH2mN4WaB",
+          "mode": "id"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Competitor Name": "={{ $json.competitor_name }}",
+            "Observed Nightly Rate": "={{ $json.observed_nightly_rate }}",
+            "Last Scraped At": "={{ $json.last_scraped_at }}",
+            "Status": "={{ $json.status }}",
+            "Property": "={{ $json.property_airtable_id }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "Feed ID",
+              "displayName": "Feed ID",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": true,
+              "removed": true
+            },
+            {
+              "id": "Competitor Name",
+              "displayName": "Competitor Name",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Observed Nightly Rate",
+              "displayName": "Observed Nightly Rate",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "number",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Last Scraped At",
+              "displayName": "Last Scraped At",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "dateTime",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Status",
+              "displayName": "Status",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "options",
+              "options": [
+                {
+                  "name": "ACTIVE",
+                  "value": "ACTIVE"
+                },
+                {
+                  "name": "STALE",
+                  "value": "STALE"
+                },
+                {
+                  "name": "FAILED",
+                  "value": "FAILED"
+                }
+              ],
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Property",
+              "displayName": "Property",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "array",
+              "readOnly": false,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "id": "5cf6df3c-c4ef-474f-811c-014d2d364e77",
+      "name": "Write to Competitor Market Feeds (Table 4)",
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2,
+      "position": [
+        448,
+        16
+      ],
+      "credentials": {
+        "airtableTokenApi": {
+          "id": "yR2piwWrdohV4ZiA",
+          "name": "Airtable Personal Access Token account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        -160,
+        80
+      ],
+      "id": "fcba8306-568c-4eb4-a8fb-33e5696e1ad9",
+      "name": "Loop Over Items"
+    },
+    {
+      "parameters": {
+        "amount": 3
+      },
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        608,
+        80
+      ],
+      "id": "ee466e57-d4c2-4387-9616-a1f56f94df38",
+      "name": "Wait",
+      "webhookId": "1bbb1bfe-bacf-46ec-b752-7d7f3b146031"
+    },
+    {
+      "parameters": {
+        "operation": "search",
+        "base": {
+          "__rl": true,
+          "value": "apppjeUadHRQGGv7O",
+          "mode": "list",
+          "cachedResultName": "properties",
+          "cachedResultUrl": "https://airtable.com/apppjeUadHRQGGv7O"
+        },
+        "table": {
+          "__rl": true,
+          "value": "tblcyXwv9oaVWci57",
+          "mode": "list",
+          "cachedResultName": "Properties",
+          "cachedResultUrl": "https://airtable.com/apppjeUadHRQGGv7O/tblcyXwv9oaVWci57"
+        },
+        "options": {
+          "fields": [
+            "Location"
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2.2,
+      "position": [
+        -368,
+        272
+      ],
+      "id": "43ef66ef-a2f6-4e5b-9ff0-ae1a3b06e5b1",
+      "name": "Search records",
+      "credentials": {
+        "airtableTokenApi": {
+          "id": "yR2piwWrdohV4ZiA",
+          "name": "Airtable Personal Access Token account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "https://serpapi.com/search.json",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "api_key",
+              "value": "888826223f99d5080ae375b59be2fe3ee786ab606089ec048ac1fb0a5a552051"
+            },
+            {
+              "name": "engine",
+              "value": "google"
+            },
+            {
+              "name": "q",
+              "value": "=={{ \"events in \" + ($json.fields[\"Location\"] || \"Lekki Phase 1\") }}"
+            },
+            {
+              "name": "htsv",
+              "value": "1"
+            },
+            {
+              "name": "num",
+              "value": "5"
+            },
+            {
+              "name": "property Id",
+              "value": "={{ $json.id }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "3b97c354-c2dc-446d-a317-2a5e54108070",
+      "name": "Firecrawl Scrape Node1",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        48,
+        288
+      ]
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        -192,
+        272
+      ],
+      "id": "bf959016-21b2-4d3c-8f22-dd50d9caff7b",
+      "name": "Loop Over Items1"
+    },
+    {
+      "parameters": {
+        "modelId": {
+          "__rl": true,
+          "value": "models/gemini-flash-lite-latest",
+          "mode": "list",
+          "cachedResultName": "models/gemini-flash-lite-latest"
+        },
+        "messages": {
+          "values": [
+            {
+              "content": "=You are an expert Short-Term Rental Revenue Strategy AI. \n\nYour task is to analyze scraped local web content for a given property zone and determine if there is an active local event, holiday, festival, or concert that will drive lodging demand surges.\n\nLOCATION ZONE: {{ $json.fields[\"Location\"] }}\nSNIPPET: {{ $json[\"ai overwiew\"] }}\n\nCLASSIFICATION RULES:\n1. \"HIGH\":\n   - Large-scale events with national or international pull (e.g., major music festivals, multi-day conventions, national holidays, stadium sports, attendance > 10,000).\n   - Causes massive lodging demand surges and local hotel/STR price spikes.\n\n2. \"MEDIUM\":\n   - Moderate regional events (e.g., tech conferences, regional expos, local beach parties, holiday long weekends, attendance 2,000 - 10,000).\n   - Drives noticeable local booking demand.\n\n3. \"NONE\":\n   - Baseline days, regular weekend events, minor local club nights, or irrelevant web search content with no impact on overnight rental demand.\n\nINSTRUCTIONS\nreturn it in json format:\n\n{\n\"impact_level\": \"THE IMPACT LEVEL\",\n\"reasoning\": \"REASONING\"\n}\n"
+            }
+          ]
+        },
+        "jsonOutput": true,
+        "builtInTools": {},
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.googleGemini",
+      "typeVersion": 1.2,
+      "position": [
+        336,
+        288
+      ],
+      "id": "a9a5df26-4950-4eb4-88d9-6c541287da5b",
+      "name": "Message a model",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "12U5Bxeunc8vGyNE",
+          "name": "Google Gemini(PaLM) Api account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "ed95111e-9f7d-416f-9f58-75a3d00f7b7b",
+              "name": "ai overwiew",
+              "value": "={{ $json.ai_overview.text_blocks }}",
+              "type": "string"
+            },
+            {
+              "id": "993ff408-9a26-430e-a22a-3fcc5a47663a",
+              "name": "id",
+              "value": "={{ $('Loop Over Items1').item.json.id }}",
+              "type": "string"
+            },
+            {
+              "id": "bc0dad6b-0d6e-4ddb-b27c-b0e89dcc43b4",
+              "name": "fields[\"Location\"]",
+              "value": "={{ $('Loop Over Items1').item.json.fields.Location }}",
+              "type": "string"
+            },
+            {
+              "id": "8cfa6920-b50c-4b7a-bf38-dd22b2ac9f44",
+              "name": "createdTime",
+              "value": "={{ $('Loop Over Items1').item.json.createdTime }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        208,
+        288
+      ],
+      "id": "3025b139-49f6-4be5-a81c-985b4545e6db",
+      "name": "Edit Fields"
+    },
+    {
+      "parameters": {
+        "operation": "create",
+        "base": {
+          "__rl": true,
+          "value": "apppjeUadHRQGGv7O",
+          "mode": "id"
+        },
+        "table": {
+          "__rl": true,
+          "value": "tblZXmbKtsYRvw6pD",
+          "mode": "list",
+          "cachedResultName": "Local Events",
+          "cachedResultUrl": "https://airtable.com/apppjeUadHRQGGv7O/tblZXmbKtsYRvw6pD"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Location Zone": "={{ $('Edit Fields').item.json.fields[\"Location\"] }}",
+            "Impact Level": "={{ JSON.parse($json.content.parts[0].text.replace(/```json|```/g, '').trim()).impact_level}}",
+            "Notes": "={{ $json.content.parts[0].text }}",
+            "Related properties": "={{ Array.isArray($('Edit Fields').item.json.id) ? $('Edit Fields').item.json.id : [$('Edit Fields').item.json.id] }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "Event ID",
+              "displayName": "Event ID",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": true,
+              "removed": true
+            },
+            {
+              "id": "Location Zone",
+              "displayName": "Location Zone",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Impact Level",
+              "displayName": "Impact Level",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "options",
+              "options": [
+                {
+                  "name": "HIGH",
+                  "value": "HIGH"
+                },
+                {
+                  "name": "MEDIUM",
+                  "value": "MEDIUM"
+                },
+                {
+                  "name": "NONE",
+                  "value": "NONE"
+                }
+              ],
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Notes",
+              "displayName": "Notes",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Related properties",
+              "displayName": "Related properties",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "array",
+              "readOnly": false,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "id": "55b03d0c-52b3-40b2-8d7b-a01cec27b5fd",
+      "name": "Write to Competitor Market Feeds (Table 4)1",
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2,
+      "position": [
+        608,
+        288
+      ],
+      "credentials": {
+        "airtableTokenApi": {
+          "id": "yR2piwWrdohV4ZiA",
+          "name": "Airtable Personal Access Token account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "amount": 3
+      },
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        752,
+        288
+      ],
+      "id": "8aaf92d9-a002-4e03-a12c-9e3a603ab439",
+      "name": "Wait1",
+      "webhookId": "3917b955-60c3-408d-820d-53d111483128"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Schedule Trigger (12h Cron)": {
+      "main": [
+        [
+          {
+            "node": "Search records",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Fetch Properties Target URLs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Properties Target URLs": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Firecrawl Scrape Node": {
+      "main": [
+        [
+          {
+            "node": "Parse Firecrawl Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Firecrawl Response": {
+      "main": [
+        [
+          {
+            "node": "Write to Competitor Market Feeds (Table 4)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop Over Items": {
+      "main": [
+        [],
+        [
+          {
+            "node": "Firecrawl Scrape Node",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Write to Competitor Market Feeds (Table 4)": {
+      "main": [
+        [
+          {
+            "node": "Wait",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Search records": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop Over Items1": {
+      "main": [
+        [],
+        [
+          {
+            "node": "Firecrawl Scrape Node1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Firecrawl Scrape Node1": {
+      "main": [
+        [
+          {
+            "node": "Edit Fields",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Edit Fields": {
+      "main": [
+        [
+          {
+            "node": "Message a model",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Message a model": {
+      "main": [
+        [
+          {
+            "node": "Write to Competitor Market Feeds (Table 4)1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Write to Competitor Market Feeds (Table 4)1": {
+      "main": [
+        [
+          {
+            "node": "Wait1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait1": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "timeSavedMode": "fixed",
+    "errorWorkflow": "n7TMDgLqU0x8UiAl",
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": false
+  },
+  "versionId": "0b2d367d-1e4b-4824-aea4-79fc1b46905b",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "1de021c500a569c3d14d073e917737d9e9c20aef616e57ba1a93f6ed4235d263"
+  },
+  "nodeGroups": [],
+  "id": "CIy90JjeiMvxNpwL",
+  "tags": []
+}
