@@ -1,6 +1,6 @@
 -- ============================================================
 -- SCHEMA: Rental Property Management Base
--- Base ID: apppjeUadHRQGGv7O
+-- Base ID: YOUR_AIRTABLE_BASE_ID
 -- Generated: 2026-10-03
 -- ============================================================
 

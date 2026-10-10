@@ -1,6 +1,6 @@
 # Rental Property Management Base
 
-**Airtable Base ID:** `apppjeUadHRQGGv7O`  
+**Airtable Base ID:** `Your_Airtable_Base_ID`  
 **Generated:** 2026-10-03
 
 ---

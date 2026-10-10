@@ -2,7 +2,7 @@
 
  **Clone the repository:**
    ```bash
-   git clone [https://github.com/Ayomide/STR-Dynamic-Pricing-and-Guest-Risk-Screening.git](https://github.com/your-username/STR-Dynamic-Pricing-and-Guest-Risk-Screening.git)
+   git clone [https://github.com/Ayomide/STR-Dynamic-Pricing-and-Guest-Risk-Screening.git]
    cd STR-Dynamic-Pricing-and-Guest-Risk-Screening
 
 ## Multi-Property Short-Term Rental Dynamic Pricing & Guest-Risk Screening Engine

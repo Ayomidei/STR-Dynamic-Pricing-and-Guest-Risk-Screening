@@ -1,5 +1,4 @@
 /**
- * Phase 2 & 4 - Guest Portal Frontend Logic
  * Integrated: Direct Airtable REST API Fetch + n8n Webhook Sync (WF-2)
  */
 
@@ -12,7 +11,7 @@ const CONFIG = {
   AIRTABLE_BASE_ID: 'YOUR_AIRTABLE_BASE_ID', // Replace with your Airtable Base ID
   
   // Replace this URL once your n8n Webhook node is live in Phase 4
-  N8N_WEBHOOK_URL: 'https://Your-n8n-Instance/webhook/booking-request'
+  N8N_WEBHOOK_URL: 'https://n8n.yourdomain.com/webhook/guest-portal-booking' // Replace with your n8n Webhook URL
 };
 
 // Static Fallback Properties (Used if Airtable Fetch fails or keys are unset)
